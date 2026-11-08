@@ -40,7 +40,41 @@ export default function App() {
   const [editingSettings, setEditingSettings] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [theme, setTheme] = useState<'light'|'dark'>(() => (localStorage.getItem('nextone-theme') as 'light'|'dark') || 'light')
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('nextone-theme', theme) }, [theme])
+
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsInstalled(true)
+    }
+    const handler = (e: any) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    window.addEventListener('appinstalled', () => {
+      setIsInstalled(true)
+      setInstallPrompt(null)
+      showNotice('NexTone app installed successfully!', 'success')
+    })
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const promptInstall = async () => {
+    if (!installPrompt) {
+      showNotice('To download/install NexTone: Open your browser menu (⋮ or Share) and choose "Add to Home screen" or "Install App".', 'success')
+      return
+    }
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallPrompt(null)
+      setIsInstalled(true)
+      showNotice('NexTone app installed!', 'success')
+    }
+  }
 
   const syncStore = async (next: Store) => {
     const previous = store
@@ -208,6 +242,12 @@ export default function App() {
           <strong style={{ font: '700 14px var(--font-display)', color: 'var(--ink-primary)' }}>NexTone</strong>
         </div>
         <div className="top-actions">
+          {!isInstalled && (
+            <button className="install-chip" onClick={promptInstall} title="Install NexTone app on this device">
+              <Download size={13}/>
+              <span>Install App</span>
+            </button>
+          )}
           <div className="today-chip">
             <CalendarDays size={15}/>
             <span>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -227,7 +267,7 @@ export default function App() {
         {page === 'Customers' && <CustomersPage customers={store.customers} documents={store.documents} query={query} setQuery={setQuery} create={() => { setEditingCustomer(null); setModal('customer') }} edit={customer => { setEditingCustomer(customer); setModal('customer') }} remove={removeCustomer} viewStatement={customer => { setStatementCustomer(customer.id); setModal('statement') }} newDocumentForCustomer={customer => newDocument('quotation', undefined, customer)} />}
         {page === 'Catalog' && <CatalogPage items={store.catalog} query={query} setQuery={setQuery} create={() => { setEditingItem(null); setModal('item') }} edit={item => { setEditingItem(item); setModal('item') }} remove={removeItem} />}
         {page === 'Statements' && <StatementsPage store={store} openStatement={id => { setStatementCustomer(id); setModal('statement') }} />}
-        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} syncStore={syncStore} />}
+        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} syncStore={syncStore} promptInstall={promptInstall} isInstalled={isInstalled} />}
       </div>
     </main>
     <nav className="floating-nav" aria-label="Main navigation">{nav.map(item => { const Icon = item.icon; return <button key={item.name} className={`floating-nav-item ${page === item.name ? 'active' : ''}`} onClick={() => setPage(item.name)} aria-label={item.name} title={item.name}><Icon size={20}/>{item.count !== undefined && item.count > 0 && <span className="nav-badge"/>}</button> })}</nav>
@@ -607,7 +647,7 @@ function StatementsPage({ store, openStatement }: { store: Store; openStatement:
   )
 }
 
-function SettingsPage({ store, save, editing, setEditing, notice, syncStore }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean> }) {
+function SettingsPage({ store, save, editing, setEditing, notice, syncStore, promptInstall, isInstalled }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean>; promptInstall: () => void; isInstalled: boolean }) {
   const [form, setForm] = useState(store.settings)
   const [isProcessing, setIsProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -766,6 +806,29 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore }: {
         </span>
       </div>
     </section>
+
+    <section className="panel pwa-install-card" style={{ marginTop: '20px', padding: '24px' }}>
+      <div className="settings-card-head" style={{ marginBottom: '16px' }}>
+        <span className="round-mini blue"><Download size={18}/></span>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <strong style={{ fontSize: '15px' }}>Progressive Web App (PWA)</strong>
+            <span className={`status-pill ${isInstalled ? 'paid' : 'active'}`} style={{ fontSize: '10.5px', padding: '2px 8px' }}>
+              <i/> {isInstalled ? 'Installed as App' : 'Downloadable Ready'}
+            </span>
+          </div>
+          <small>Install NexTone on your phone, tablet, or desktop to launch directly from your home screen with fast offline caching.</small>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+        <Button variant="secondary" onClick={promptInstall}>
+          <Download size={16}/> {isInstalled ? 'Re-install / Launch App' : 'Download & Install NexTone App'}
+        </Button>
+        <span style={{ fontSize: '12px', color: 'var(--ink-muted)' }}>
+          Works across Chrome, Safari (Add to Home Screen), Android, iOS, Windows & Mac.
+        </span>
+      </div>
+    </section>
   </>
 }
 
@@ -844,7 +907,35 @@ function StatementModal({ store, customerId, close }: { store: Store; customerId
   const docs = store.documents.filter(d => d.customer_id === customerId && d.type === 'invoice').sort((a, b) => a.issue_date.localeCompare(b.issue_date))
   const total = docs.reduce((sum, doc) => sum + docTotal(doc), 0); const paid = docs.reduce((sum, doc) => sum + paidFor(store.payments, doc.id), 0)
   const statement = { customer: customer || { id: '', name: '', phone: '', email: '', address: '' }, documents: docs, payments: store.payments, total, paid, balance: Math.max(0, total - paid), settings: store.settings }
-  return <Dialog title="Customer statement" subtitle={customer?.name || ''} close={close} wide><div className="statement-preview"><DocumentCanvas statement={statement}/></div><div className="dialog-actions"><Button variant="secondary" onClick={close}>Close</Button><Button variant="secondary" onClick={() => downloadStatement(statement, 'png')}><Printer size={16}/> Download PNG</Button><Button onClick={() => downloadStatement(statement, 'pdf')}><Download size={16}/> Download PDF</Button></div></Dialog>
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async (format: 'pdf'|'png') => {
+    setExporting(true)
+    try {
+      await downloadStatement(statement, format)
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not export statement.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <Dialog title="Customer statement" subtitle={customer?.name || ''} close={close} wide>
+      <div className="statement-preview">
+        <DocumentCanvas statement={statement}/>
+      </div>
+      <div className="dialog-actions">
+        <Button variant="secondary" onClick={close}>Close</Button>
+        <Button variant="secondary" disabled={exporting} onClick={() => void handleExport('png')}>
+          <Printer size={16}/> Download PNG
+        </Button>
+        <Button disabled={exporting} onClick={() => void handleExport('pdf')}>
+          <Download size={16}/> Download PDF
+        </Button>
+      </div>
+    </Dialog>
+  )
 }
 
 function Login({ onNotice }: { onNotice: (text: string, kind?: 'error'|'success') => void }) {

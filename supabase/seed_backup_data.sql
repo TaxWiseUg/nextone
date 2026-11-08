@@ -1,19 +1,38 @@
 -- Seed script to load NexTone backup data straight into Supabase PostgreSQL
 -- Can be executed in the Supabase SQL editor by the workspace owner.
+-- Fully idempotent: safely replaces or updates existing records without unique constraint errors.
 
 do $$
 declare
   current_owner uuid;
 begin
-  -- Use currently authenticated user, or the first existing user in auth.users
-  select id into current_owner from auth.users limit 1;
+  -- 1. Determine target owner:
+  -- Priority 1: User ID 6fa7be7e-7537-4762-b97a-d318d6f33bf5
+  select id into current_owner from auth.users where id = '6fa7be7e-7537-4762-b97a-d318d6f33bf5';
+  
+  -- Priority 2: User email 'taxwiseplatform@gmail.com'
+  if current_owner is null then
+    select id into current_owner from auth.users where lower(email) = 'taxwiseplatform@gmail.com' limit 1;
+  end if;
+
+  -- Priority 3: Current session auth.uid()
+  if current_owner is null then
+    current_owner := auth.uid();
+  end if;
+
+  -- Priority 4: First registered user in auth.users
+  if current_owner is null then
+    select id into current_owner from auth.users order by created_at asc limit 1;
+  end if;
 
   if current_owner is null then
-    raise notice 'No user found in auth.users. Please sign up or create a user first.';
+    raise notice 'No user found in auth.users. Please sign up or create a user in Authentication first.';
     return;
   end if;
 
-  -- 1. Company Settings
+  raise notice 'Seeding backup data for owner: %', current_owner;
+
+  -- 2. Company Settings (Upsert)
   insert into public.company_settings (owner_id, name, tagline, address, phone, email, website, logo_url, default_notes)
   values (
     current_owner,
@@ -31,9 +50,12 @@ begin
     tagline = excluded.tagline,
     address = excluded.address,
     phone = excluded.phone,
-    email = excluded.email;
+    email = excluded.email,
+    website = excluded.website,
+    logo_url = excluded.logo_url,
+    default_notes = excluded.default_notes;
 
-  -- 2. Customers
+  -- 3. Customers (Upsert by ID)
   insert into public.customers (id, owner_id, name, phone, email, address, created_at)
   values
     ('cust_1792668744179_ouwc', current_owner, 'Mr. Timothy', '+256783282126', '', 'Namasuba, Kampala', '2026-10-22T11:32:24.179Z'),
@@ -45,7 +67,7 @@ begin
     email = excluded.email,
     address = excluded.address;
 
-  -- 3. Catalog Products
+  -- 4. Catalog Products (Upsert by ID)
   insert into public.catalog_items (id, owner_id, name, description, unit, price, category, created_at)
   values
     ('prod_1793449702945_qxjw', current_owner, 'Notebook', '5 square homes', 'pcs', 41000, 'Paper Printing', '2026-10-31T12:28:22.945Z'),
@@ -69,7 +91,33 @@ begin
     price = excluded.price,
     category = excluded.category;
 
-  -- 4. Sales Documents (Quotation and Invoices)
+  -- 5. Clean up any existing conflicting documents and receipts for this owner
+  -- This prevents "ERROR: 23505: duplicate key value violates unique constraint"
+  -- when documents with numbers ORD-2026-0100, INV-2026-0100, INV-2026-0101 or receipts
+  -- RCT-2026-0100, RCT-2026-0101 already exist under different primary IDs.
+  delete from public.payments
+  where owner_id = current_owner
+    and (
+      number in ('RCT-2026-0100', 'RCT-2026-0101')
+      or id in ('pay_1793015681871_wi1t', 'pay_1792668940744_l7nf')
+      or document_id in (
+        select id from public.sales_documents
+        where owner_id = current_owner
+          and (
+            number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101')
+            or id in ('ord_1793456784863_6l5k', 'inv_1792671847743_c9os', 'inv_1792668875661_jioy')
+          )
+      )
+    );
+
+  delete from public.sales_documents
+  where owner_id = current_owner
+    and (
+      number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101')
+      or id in ('ord_1793456784863_6l5k', 'inv_1792671847743_c9os', 'inv_1792668875661_jioy')
+    );
+
+  -- 6. Insert Sales Documents
   insert into public.sales_documents (id, owner_id, type, number, customer_id, customer_name, customer_phone, customer_email, customer_address, items, discount_percent, notes, status, issue_date, due_date, created_at)
   values
     (
@@ -125,14 +173,9 @@ begin
       '2026-02-28',
       '2027-02-01',
       '2026-10-22T11:34:35.661Z'
-    )
-  on conflict (id) do update set
-    number = excluded.number,
-    items = excluded.items,
-    status = excluded.status,
-    notes = excluded.notes;
+    );
 
-  -- 5. Payments
+  -- 7. Insert Payments
   insert into public.payments (id, owner_id, document_id, number, paid_at, amount, method, reference, created_at)
   values
     (
@@ -156,12 +199,7 @@ begin
       'Mobile Money',
       'Airtel',
       '2026-10-22T11:35:40.744Z'
-    )
-  on conflict (id) do update set
-    number = excluded.number,
-    amount = excluded.amount,
-    method = excluded.method,
-    reference = excluded.reference;
+    );
 
-end
-$$;
+  raise notice 'NexTone backup data seeded successfully for owner %!', current_owner;
+end $$;

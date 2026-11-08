@@ -612,6 +612,26 @@ export async function persistStore(store: Store, previous: Store) {
 
   for (const { table, rows, oldRows } of tables) {
     const oldById = new Map(oldRows.map(row => [row.id, row]))
+
+    // Prevent duplicate key error on unique(owner_id, number) if an existing row has a different ID
+    if (table === 'sales_documents' || table === 'payments') {
+      const numbers = rows.map((r: any) => r.number).filter(Boolean)
+      const currentIds = new Set(rows.map((r: any) => r.id))
+      if (numbers.length) {
+        const { data: existingRows } = await client.from(table)
+          .select('id, number')
+          .eq('owner_id', owner_id)
+          .in('number', numbers)
+        const conflictingIds = (existingRows || []).filter(e => !currentIds.has(e.id)).map(e => e.id)
+        if (conflictingIds.length) {
+          if (table === 'sales_documents') {
+            await client.from('payments').delete().eq('owner_id', owner_id).in('document_id', conflictingIds)
+          }
+          await client.from(table).delete().eq('owner_id', owner_id).in('id', conflictingIds)
+        }
+      }
+    }
+
     for (const row of rows) {
       if (same(oldById.get(row.id), row)) continue
       const result = await client.from(table).upsert({ ...row, owner_id })

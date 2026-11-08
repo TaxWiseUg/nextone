@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
-import { Mail, Phone, Globe2, AlertCircle } from 'lucide-react'
+import { Mail, Phone, Globe2, AlertCircle, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import type { Customer, LineItem, Payment, SalesDocument, CompanySettings } from './types'
 import { defaultSettings } from './types'
 
@@ -29,7 +29,6 @@ export function formatDocumentNumber(num?: string): string {
       return `#${prefix.toUpperCase()}-${yr}-${String(seq).padStart(4, '0')}`
     }
   }
-  // For statement numbers like #STM-2026-MRTIM
   if (trimmed.startsWith('STM-')) {
     return `#${trimmed}`
   }
@@ -90,15 +89,15 @@ function PaperFooter({ settings }: { settings: CompanySettings }) {
   return (
     <div className="paper-footer">
       <span>
-        <Globe2 size={18} className="paper-footer-icon" />
+        <Globe2 size={16} className="paper-footer-icon" />
         {settings.website || 'nextone.ug'}
       </span>
       <span>
-        <Phone size={18} className="paper-footer-icon" />
+        <Phone size={16} className="paper-footer-icon" />
         {phoneClean}
       </span>
       <span>
-        <Mail size={18} className="paper-footer-icon" />
+        <Mail size={16} className="paper-footer-icon" />
         {settings.email || 'orders@nextone.ug'}
       </span>
     </div>
@@ -112,12 +111,14 @@ function CustomerCard({
   customer: Pick<Customer, 'name' | 'phone' | 'email' | 'address'>
   label: string
 }) {
-  const details = [customer.address || 'Kampala, Uganda', customer.phone].filter(Boolean).join(' · ')
+  const details = [customer.address || 'Kampala, Uganda', customer.phone, customer.email].filter(Boolean).join(' · ')
   return (
     <div className="paper-customer">
-      <span className="paper-customer-label">{label}</span>
+      <div className="paper-customer-header">
+        <span className="paper-customer-label">{label}</span>
+      </div>
       <strong className="paper-customer-name">{customer.name || 'Customer'}</strong>
-      <p className="paper-customer-details">{details || 'Customer details'}</p>
+      <p className="paper-customer-details">{details || 'Namasuba, Kampala, Uganda'}</p>
     </div>
   )
 }
@@ -183,7 +184,26 @@ export function DocumentCanvas({
           </div>
         </header>
 
-        <CustomerCard customer={statement.customer} label="PAYABLE TO" />
+        <CustomerCard customer={statement.customer} label="STATEMENT ISSUED TO" />
+
+        {/* 3-Card Financial Metric Summary Bar */}
+        <div className="paper-metrics-bar">
+          <div className="paper-metric-card">
+            <span className="metric-tag">TOTAL INVOICED</span>
+            <strong className="metric-num">{cash(statement.total)}</strong>
+            <small>{statement.documents.length} {statement.documents.length === 1 ? 'Invoice' : 'Invoices'}</small>
+          </div>
+          <div className="paper-metric-card">
+            <span className="metric-tag">TOTAL PAID</span>
+            <strong className="metric-num settled">{cash(statement.paid)}</strong>
+            <small>Recorded Receipts</small>
+          </div>
+          <div className="paper-metric-card highlight">
+            <span className="metric-tag">OUTSTANDING BALANCE</span>
+            <strong className={`metric-num ${statement.balance > 0 ? 'due' : 'settled'}`}>{cash(statement.balance)}</strong>
+            <small>{statement.balance > 0 ? 'Payment Required' : 'Account Settled'}</small>
+          </div>
+        </div>
 
         <div className="paper-table-head">
           <span>INVOICE BREAKDOWN</span>
@@ -197,8 +217,8 @@ export function DocumentCanvas({
               const balance = Math.max(0, totalOf(doc.items, doc.discount_percent) - paid)
               const isSettled = balance <= 0
               const itemsSummary = doc.items.map(it => `${it.description} (${it.quantity} ${it.unit || 'pcs'})`).join(', ')
-
               const formattedNum = formatDocumentNumber(doc.number)
+
               return (
                 <div className="paper-statement-entry" key={doc.id}>
                   <div className="statement-entry-head">
@@ -213,19 +233,22 @@ export function DocumentCanvas({
                       <strong className={isSettled ? 'settled' : 'due'}>{cash(balance)}</strong>
                     </div>
                   </div>
-                  <div className="statement-entry-date">{date(doc.issue_date)}</div>
-                  <div className="statement-entry-summary">{itemsSummary || 'Services & Items'}</div>
+                  <div className="statement-entry-meta">
+                    <span>Issued: {date(doc.issue_date)}</span>
+                    {doc.due_date && <span> · Due: {date(doc.due_date)}</span>}
+                  </div>
+                  <div className="statement-entry-summary">{itemsSummary || 'Printing & branding services'}</div>
                   <div className="statement-entry-breakdown">
                     <div className="breakdown-col">
-                      <small>TOTAL</small>
+                      <small>TOTAL INVOICE</small>
                       <strong>{cash(totalOf(doc.items, doc.discount_percent))}</strong>
                     </div>
                     <div className="breakdown-col">
-                      <small>PAID</small>
+                      <small>PAID TO DATE</small>
                       <strong className="settled">{cash(paid)}</strong>
                     </div>
                     <div className="breakdown-col">
-                      <small>BALANCE</small>
+                      <small>OUTSTANDING</small>
                       <strong className={isSettled ? 'settled' : 'due'}>{cash(balance)}</strong>
                     </div>
                   </div>
@@ -237,29 +260,45 @@ export function DocumentCanvas({
           )}
         </div>
 
+        {/* Side-by-Side Bottom Section (No dead white space) */}
         <div className="paper-bottom-section">
-          <div className="paper-notes">
-            <strong>NOTES:</strong>
-            <p>{defaultNotes}</p>
+          <div className="paper-instructions-card">
+            <div className="instructions-title">
+              <ShieldCheck size={16} />
+              <strong>PAYMENT INSTRUCTIONS & TERMS</strong>
+            </div>
+            <div className="instructions-grid">
+              <div><span>Mobile Money:</span> <strong>MTN / Airtel (+256 756 286 160)</strong></div>
+              <div><span>Recipient:</span> <strong>NexTone Printing & Branding</strong></div>
+              <div><span>Reference:</span> <strong>{statement.customer.name}</strong></div>
+            </div>
+            <div className="instructions-note">
+              <p>{defaultNotes}</p>
+            </div>
           </div>
 
           <div className="paper-total-card">
             <div className="total-row">
-              <span>TOTAL AMOUNT INVOICED</span>
+              <span>TOTAL INVOICED</span>
               <strong>{cash(statement.total)}</strong>
             </div>
             <div className="total-row paid-summary">
-              <span>TOTAL AMOUNT PAID</span>
+              <span>TOTAL PAID</span>
               <strong className="settled">{cash(statement.paid)}</strong>
             </div>
-            <div className="total-row">
-              <span>TOTAL OUTSTANDING BALANCE</span>
+            <div className="total-row grand-total-row">
+              <span>NET OUTSTANDING</span>
               <strong className={statement.balance > 0 ? 'due' : 'settled'}>{cash(statement.balance)}</strong>
             </div>
-            {statement.balance > 0 && (
+            {statement.balance > 0 ? (
               <div className="statement-payment-due">
                 <AlertCircle size={15} />
-                <span>PAYMENT DUE</span>
+                <span>PAYMENT DUE · IMMEDIATE SETTLEMENT</span>
+              </div>
+            ) : (
+              <div className="statement-payment-settled">
+                <CheckCircle2 size={15} />
+                <span>ALL INVOICES FULLY SETTLED</span>
               </div>
             )}
           </div>
@@ -308,10 +347,34 @@ export function DocumentCanvas({
         label={receipt ? 'PAYMENT RECEIVED FROM' : document.type === 'quotation' ? 'PREPARED FOR' : 'PAYABLE TO'}
       />
 
+      {/* Document Meta Row */}
+      <div className="paper-meta-strip">
+        <div>
+          <span>ISSUE DATE</span>
+          <strong>{displayDate}</strong>
+        </div>
+        {document.type === 'invoice' && (
+          <div>
+            <span>DUE DATE</span>
+            <strong>{date(document.due_date)}</strong>
+          </div>
+        )}
+        <div>
+          <span>CURRENCY</span>
+          <strong>UGX (Ugandan Shillings)</strong>
+        </div>
+        <div>
+          <span>STATUS</span>
+          <strong className={balance <= 0 && document.type === 'invoice' ? 'settled' : 'due'}>
+            {receipt ? 'CONFIRMED' : document.type === 'quotation' ? 'ESTIMATE' : balance <= 0 ? 'PAID IN FULL' : 'PAYMENT DUE'}
+          </strong>
+        </div>
+      </div>
+
       {receipt ? (
         <>
           <div className="paper-table-head">
-            <span>PAYMENT RECEIPT</span>
+            <span>PAYMENT RECEIPT DETAILS</span>
             <span>AMOUNT</span>
           </div>
           <div className="paper-receipt-card">
@@ -321,40 +384,49 @@ export function DocumentCanvas({
             </div>
             <div className="paper-receipt-grid">
               <div>
-                <span>INVOICE</span>
+                <span>INVOICE NUMBER</span>
                 <strong>#{document.number}</strong>
               </div>
               <div>
-                <span>PAYMENT DATE</span>
+                <span>DATE RECEIVED</span>
                 <strong>{date(payment!.paid_at)}</strong>
               </div>
               <div>
-                <span>METHOD</span>
+                <span>PAYMENT METHOD</span>
                 <strong>{payment!.method}</strong>
               </div>
               {payment!.reference && (
                 <div>
-                  <span>REFERENCE</span>
+                  <span>TRANSACTION REF</span>
                   <strong>{payment!.reference}</strong>
                 </div>
               )}
             </div>
           </div>
           <div className="paper-bottom-section">
+            <div className="paper-instructions-card">
+              <div className="instructions-title">
+                <CheckCircle2 size={16} />
+                <strong>OFFICIAL RECEIPT ACKNOWLEDGMENT</strong>
+              </div>
+              <p className="instructions-note">
+                Thank you for your business. This official receipt acknowledges payment in full or part toward invoice #{document.number}.
+              </p>
+            </div>
             <div className="paper-total-card">
               <div className="total-row">
                 <span>INVOICE TOTAL</span>
                 <strong>{cash(totalOf(document.items, document.discount_percent))}</strong>
               </div>
               <div className="total-row">
-                <span>PAID BEFORE THIS RECEIPT</span>
+                <span>PREVIOUSLY PAID</span>
                 <strong>{cash(receiptPaidBefore)}</strong>
               </div>
               <div className="total-row paid-summary">
                 <span>THIS PAYMENT</span>
                 <strong className="settled">{cash(payment!.amount)}</strong>
               </div>
-              <div className="total-row">
+              <div className="total-row grand-total-row">
                 <span>REMAINING BALANCE</span>
                 <strong className={balance > 0 ? 'due' : 'settled'}>{cash(balance)}</strong>
               </div>
@@ -370,19 +442,29 @@ export function DocumentCanvas({
           <ItemRows items={document.items} />
 
           <div className="paper-bottom-section">
-            <div className="paper-notes">
-              <strong>NOTES:</strong>
-              <p>
-                {notesText.replace(/#?(ORD|INV|RCT)-(\d{4})-(\d+)/gi, (match) => {
-                  const cleaned = formatDocumentNumber(match)
-                  return cleaned || ''
-                }).trim()}
-              </p>
+            <div className="paper-instructions-card">
+              <div className="instructions-title">
+                <ShieldCheck size={16} />
+                <strong>PAYMENT OPTIONS & NOTES</strong>
+              </div>
+              <div className="instructions-grid">
+                <div><span>Mobile Money:</span> <strong>MTN / Airtel (+256 756 286 160)</strong></div>
+                <div><span>Recipient:</span> <strong>NexTone Printing & Branding</strong></div>
+                <div><span>Reference:</span> <strong>{document.number}</strong></div>
+              </div>
+              <div className="instructions-note">
+                <p>
+                  {notesText.replace(/#?(ORD|INV|RCT)-(\d{4})-(\d+)/gi, (match) => {
+                    const cleaned = formatDocumentNumber(match)
+                    return cleaned || ''
+                  }).trim()}
+                </p>
+              </div>
             </div>
 
             <div className="paper-total-card">
               <div className="total-row">
-                <span>SUB TOTAL</span>
+                <span>SUBTOTAL</span>
                 <strong>
                   {cash(document.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0))}
                 </strong>

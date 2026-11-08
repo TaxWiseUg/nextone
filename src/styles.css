@@ -234,6 +234,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   gap: 12px;
 }
 
+.install-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-teal-bg);
+  color: var(--accent-teal-text);
+  border: 1px solid rgba(15, 89, 96, 0.25);
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.install-chip:hover {
+  background: var(--teal-600);
+  color: #ffffff;
+  border-color: transparent;
+}
+
 .today-chip {
   display: flex;
   align-items: center;
@@ -1442,8 +1463,12 @@ tbody tr.click-row:hover td {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
-  padding-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-surface);
+  z-index: 10;
 }
 
 /* Form Fields */
@@ -2276,13 +2301,147 @@ tbody tr.click-row:hover td {
   color: #12242f;
 }
 
-.paper-bottom-section {
-  margin-top: auto;
-  margin-bottom: 18px;
-  display: flex;
-  flex-direction: column;
+/* Statement Metrics Summary Bar */
+.paper-metrics-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
   position: relative;
   z-index: 2;
+}
+
+.paper-metric-card {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(225, 233, 230, 0.95);
+  border-radius: 16px;
+  padding: 12px 16px;
+  box-shadow: 0 2px 6px rgba(18, 50, 56, 0.03);
+}
+
+.paper-metric-card.highlight {
+  background: #fdfaf5;
+  border-color: #f0e2cd;
+}
+
+.metric-tag {
+  font: 800 10px var(--font-display);
+  letter-spacing: 1px;
+  color: #637783;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.metric-num {
+  font: 800 16px monospace;
+  color: #12242f;
+  display: block;
+}
+
+.paper-metric-card small {
+  font-size: 11px;
+  color: #728490;
+  display: block;
+  margin-top: 2px;
+}
+
+/* Document Meta Strip */
+.paper-meta-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(225, 233, 230, 0.9);
+  border-radius: 16px;
+  padding: 10px 20px;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 2;
+}
+
+.paper-meta-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.paper-meta-strip span {
+  font: 800 10px var(--font-display);
+  letter-spacing: 0.8px;
+  color: #637783;
+}
+
+.paper-meta-strip strong {
+  font-size: 12.5px;
+  color: #12242f;
+}
+
+.statement-entry-meta {
+  font-size: 11.5px;
+  color: #728490;
+  margin-bottom: 2px;
+}
+
+/* Side-by-Side Bottom Section (Eliminates excessive empty white space on A4) */
+.paper-bottom-section {
+  margin-top: 16px;
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 16px;
+  align-items: stretch;
+  position: relative;
+  z-index: 2;
+}
+
+.paper-instructions-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(18, 50, 56, 0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.instructions-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0d5660;
+  font: 800 11.5px var(--font-display);
+  letter-spacing: 1px;
+}
+
+.instructions-grid {
+  display: grid;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #4a5e6a;
+  background: #f7faf9;
+  border: 1px solid #edf2f1;
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+
+.instructions-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.instructions-grid strong {
+  color: #12242f;
+  font-family: monospace;
+  font-size: 11.5px;
+}
+
+.instructions-note p {
+  font-size: 11px;
+  color: #556a76;
+  line-height: 1.45;
+  margin: 0;
 }
 
 .paper-notes {
@@ -2309,42 +2468,44 @@ tbody tr.click-row:hover td {
 
 .paper-total-card {
   background: #ffffff;
-  border-radius: 22px;
-  padding: 22px 28px;
+  border-radius: 20px;
+  padding: 18px 22px;
   box-shadow: 0 2px 10px rgba(18, 50, 56, 0.04);
   margin: 0;
   position: relative;
   z-index: 2;
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
 }
 
 .total-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
   color: #364a55;
 }
 
 .total-row strong {
-  font: 700 15.5px monospace;
+  font: 700 14.5px monospace;
   color: #2e414c;
 }
 
 .total-row.grand-total-row {
   border-top: 1px solid #edf1f3;
   margin-top: 4px;
-  padding-top: 12px;
-  font-size: 17px;
+  padding-top: 10px;
+  font-size: 14.5px;
   font-weight: 800;
   color: #102732;
 }
 
 .total-row.grand-total-row strong {
-  font: 800 20px monospace;
+  font: 800 17.5px monospace;
   color: #102732;
 }
 
@@ -2357,13 +2518,13 @@ tbody tr.click-row:hover td {
 }
 
 .total-row.balance-due-row {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   color: #ba2b2b;
 }
 
 .total-row.balance-due-row strong {
-  font: 800 19px monospace;
+  font: 800 17.5px monospace;
   color: #ba2b2b;
 }
 
@@ -2373,31 +2534,44 @@ tbody tr.click-row:hover td {
   align-items: center;
   gap: 6px;
   color: #ba2b2b;
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.statement-payment-settled {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  color: #0c6f62;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   margin-top: 4px;
 }
 
 .paper-footer {
-  margin-top: 0;
+  margin-top: auto;
   background: #0b434a;
   color: #ffffff;
-  border-radius: 24px;
-  height: 56px;
-  padding: 0 28px;
+  border-radius: 20px;
+  height: 48px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: relative;
   z-index: 2;
+  flex-shrink: 0;
 }
 
 .paper-footer span {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -2535,18 +2709,25 @@ html, body, #root, .app-shell {
 /* Statement preview */
 .statement-preview {
   width: 100%;
-  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: #eae7dd;
-  padding: 16px;
+  padding: 16px 8px;
   box-sizing: border-box;
+  max-height: 72vh;
+  scrollbar-width: thin;
 }
 
 .statement-preview .paper-root {
   transform: scale(0.72);
-  transform-origin: top left;
-  margin-bottom: -320px;
+  transform-origin: top center;
+  margin-bottom: -310px;
+  flex-shrink: 0;
 }
 
 /* ==========================================================================
@@ -2687,16 +2868,47 @@ html, body, #root, .app-shell {
     height: 30px;
   }
   .customers-grid, .catalog-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .customer-card, .catalog-card {
+    padding: 14px 12px;
+  }
+  .customer-card h3, .catalog-card h3 {
+    font-size: 14px;
+    margin: 4px 0;
+  }
+  .customer-contact {
+    font-size: 11px;
+    gap: 4px;
   }
   .document-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
   }
   .document-stats > div {
-    padding: 10px 14px;
+    padding: 8px 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .document-stats > div strong {
+    font-size: 13px;
+  }
+  .quick-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .quick-action {
+    padding: 10px 12px;
+  }
+  .quick-text strong {
+    font-size: 11.5px;
+  }
+  .quick-text small {
+    display: none;
   }
   .chart-area {
     height: 130px;
