@@ -1,14 +1,14 @@
 import type * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, Banknote, BookOpenText, Boxes,
   BriefcaseBusiness, CalendarDays, Check, ChevronDown, ChevronRight, CircleAlert, ClipboardList,
-  Clock3, Download, Ellipsis, FileChartColumnIncreasing, FileCheck2, FileClock, FilePlus2,
+  Clock3, Database, Download, FileChartColumnIncreasing, FileCheck2, FileClock, FilePlus2,
   FileText, Globe2, LayoutDashboard, LogOut, Mail, MoreHorizontal, Package, Pencil, Phone, Plus,
-  Printer, ReceiptText, Search, Settings, ShieldCheck, Sparkles, Sun, Moon, Trash2, TrendingUp, UserRound, Users,
+  Printer, ReceiptText, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Sun, Moon, Trash2, TrendingUp, Upload, UserRound, Users,
   WalletCards, X,
 } from 'lucide-react'
-import { isDemo, loadStore, makeId, persistStore, supabase, type Store } from './data'
+import { exportBackup, initialBackupStore, isDemo, loadStore, makeId, parseBackupJson, persistStore, supabase, type Store } from './data'
 import type { CatalogItem, Customer, DocumentType, LineItem, Payment, PaymentMethod, SalesDocument } from './types'
 import { defaultSettings } from './types'
 import { DocumentCanvas, downloadDocument, downloadStatement, totalOf } from './DocumentCanvas'
@@ -83,8 +83,40 @@ export default function App() {
   const collected = store.payments.filter(payment => payment.paid_at.startsWith(currentMonth)).reduce((sum, payment) => sum + Number(payment.amount), 0)
   const overdueCount = invoices.filter(doc => doc.due_date < today() && docTotal(doc) > paidFor(store.payments, doc.id)).length
 
-  const newDocument = (type: DocumentType, source?: SalesDocument) => {
-    setActiveDoc(source ? { ...source, id: '', number: '', type, status: type === 'invoice' ? 'unpaid' : 'draft', issue_date: today(), due_date: today(), source_quote: source.type === 'quotation' ? source.number : undefined, items: source.items.map(item => ({ ...item, id: makeId('line') })) } : null)
+  const newDocument = (type: DocumentType, source?: SalesDocument, prefillCustomer?: Customer) => {
+    if (source) {
+      setActiveDoc({
+        ...source,
+        id: '',
+        number: '',
+        type,
+        status: type === 'invoice' ? 'unpaid' : 'draft',
+        issue_date: today(),
+        due_date: today(),
+        source_quote: source.type === 'quotation' ? source.number : undefined,
+        items: source.items.map(item => ({ ...item, id: makeId('line') })),
+      })
+    } else if (prefillCustomer) {
+      setActiveDoc({
+        id: '',
+        number: '',
+        type,
+        customer_id: prefillCustomer.id,
+        customer_name: prefillCustomer.name,
+        customer_phone: prefillCustomer.phone,
+        customer_email: prefillCustomer.email,
+        customer_address: prefillCustomer.address,
+        items: [{ id: makeId('line'), description: '', quantity: 1, unit: 'piece', unit_price: 0 }],
+        discount_percent: 0,
+        notes: store.settings.default_notes,
+        status: type === 'invoice' ? 'unpaid' : 'draft',
+        issue_date: today(),
+        due_date: today(),
+        created_at: new Date().toISOString(),
+      })
+    } else {
+      setActiveDoc(null)
+    }
     setModal('document')
   }
   const saveDocument = async (doc: Omit<SalesDocument, 'id' | 'number' | 'created_at'> & Partial<Pick<SalesDocument, 'id' | 'number' | 'created_at'>>) => {
@@ -136,7 +168,16 @@ export default function App() {
     showNotice('Item removed from catalog.')
   }
 
-  if (!authReady || loading) return <div className="loading-screen"><div className="brand-mark small"><span/><span/></div><span className="loader"/>Loading your workspace…</div>
+  if (!authReady || loading) return (
+    <div className="global-preloader">
+      <div className="global-preloader-brand">
+        <div className="brand-mark"><span/><span/></div>
+        <strong>NexTone</strong>
+      </div>
+      <div className="global-spinner"/>
+      <small>Loading your printing & branding workspace…</small>
+    </div>
+  )
   if (supabase && !user) return <><Login onNotice={showNotice} />{notice && <div className={`toast ${notice.kind === 'error' ? 'error' : ''}`}><span>{notice.kind === 'error' ? <CircleAlert size={18}/> : <Check size={18}/>}</span>{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}</>
   const nav = [
     { name: 'Overview' as Page, icon: LayoutDashboard },
@@ -161,15 +202,32 @@ export default function App() {
     </aside>
     {sidebarOpen && <button aria-label="Close menu" className="mobile-scrim" onClick={() => setSidebarOpen(false)}/>}
     <main className="main-area">
-      <header className="topbar"><div className="top-left"><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={14}/><strong>{page}</strong></div></div><div className="top-actions"><div className="today-chip"><CalendarDays size={15}/><span>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span></div><button className="icon-button theme-toggle" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={17}/> : <Sun size={17}/>}</button><button className="avatar top-avatar" title={user?.email || 'NexTone owner'}>{user?.email?.slice(0, 1).toUpperCase() || 'N'}</button></div></header>
+      <header className="topbar">
+        <div className="top-left" style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setPage('Overview')}>
+          <div className="brand-mark small"><span/><span/></div>
+          <strong style={{ font: '700 14px var(--font-display)', color: 'var(--ink-primary)' }}>NexTone</strong>
+        </div>
+        <div className="top-actions">
+          <div className="today-chip">
+            <CalendarDays size={15}/>
+            <span>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <button className="icon-button theme-toggle" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+            {theme === 'light' ? <Moon size={17}/> : <Sun size={17}/>}
+          </button>
+          <button className="avatar top-avatar" title={user?.email || 'NexTone owner'} onClick={() => setPage('Settings')}>
+            {user?.email?.slice(0, 1).toUpperCase() || 'N'}
+          </button>
+        </div>
+      </header>
       {isDemo && <div className="demo-banner"><Sparkles size={15}/><span><strong>Preview mode</strong> — changes are saved in this browser. Connect Supabase to use your secured live workspace.</span></div>}
       <div className="page-wrap">
         {page === 'Overview' && <Overview store={store} collected={collected} outstanding={outstanding} overdueCount={overdueCount} openPage={setPage} newDocument={newDocument} openDoc={setActiveDoc} setModal={setModal} />}
         {page === 'Documents' && <DocumentsPage documents={filteredDocs} allDocuments={store.documents} payments={store.payments} settings={store.settings} query={query} setQuery={setQuery} newDocument={newDocument} openDoc={setActiveDoc} addPayment={doc => { setPayDoc(doc); setModal('payment') }} onDelete={deleteDocument} />}
-        {page === 'Customers' && <CustomersPage customers={store.customers} documents={store.documents} query={query} setQuery={setQuery} create={() => { setEditingCustomer(null); setModal('customer') }} edit={customer => { setEditingCustomer(customer); setModal('customer') }} remove={removeCustomer} viewStatement={customer => { setStatementCustomer(customer.id); setModal('statement') }} />}
+        {page === 'Customers' && <CustomersPage customers={store.customers} documents={store.documents} query={query} setQuery={setQuery} create={() => { setEditingCustomer(null); setModal('customer') }} edit={customer => { setEditingCustomer(customer); setModal('customer') }} remove={removeCustomer} viewStatement={customer => { setStatementCustomer(customer.id); setModal('statement') }} newDocumentForCustomer={customer => newDocument('quotation', undefined, customer)} />}
         {page === 'Catalog' && <CatalogPage items={store.catalog} query={query} setQuery={setQuery} create={() => { setEditingItem(null); setModal('item') }} edit={item => { setEditingItem(item); setModal('item') }} remove={removeItem} />}
         {page === 'Statements' && <StatementsPage store={store} openStatement={id => { setStatementCustomer(id); setModal('statement') }} />}
-        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} />}
+        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} syncStore={syncStore} />}
       </div>
     </main>
     <nav className="floating-nav" aria-label="Main navigation">{nav.map(item => { const Icon = item.icon; return <button key={item.name} className={`floating-nav-item ${page === item.name ? 'active' : ''}`} onClick={() => setPage(item.name)} aria-label={item.name} title={item.name}><Icon size={20}/>{item.count !== undefined && item.count > 0 && <span className="nav-badge"/>}</button> })}</nav>
@@ -185,14 +243,18 @@ export default function App() {
 
 function paidFor(payments: Payment[], id: string) { return payments.filter(p => p.document_id === id).reduce((sum, p) => sum + Number(p.amount), 0) }
 function nextNumber(type: DocumentType, store: Store) {
-  const year = new Date().getFullYear(); const prefix = type === 'invoice' ? `INV-${year}-` : `ORD-${year}-`
+  const year = new Date().getFullYear()
+  const prefix = type === 'invoice' ? `INV-${year}-` : `ORD-${year}-`
   const max = store.documents.filter(d => d.number.startsWith(prefix)).reduce((acc, d) => Math.max(acc, Number(d.number.split('-').at(-1)) || 0), 0)
-  return `${prefix}${String(max + 1).padStart(4, '0')}`
+  const nextVal = max >= 100 ? max + 1 : 100
+  return `${prefix}${String(nextVal).padStart(4, '0')}`
 }
 function nextReceiptNumber(payments: Payment[]) {
-  const year = new Date().getFullYear(); const prefix = `RCT-${year}-`
+  const year = new Date().getFullYear()
+  const prefix = `RCT-${year}-`
   const max = payments.filter(p => p.number.startsWith(prefix)).reduce((acc, p) => Math.max(acc, Number(p.number.split('-').at(-1)) || 0), 0)
-  return `${prefix}${String(max + 1).padStart(4, '0')}`
+  const nextVal = max >= 100 ? max + 1 : 100
+  return `${prefix}${String(nextVal).padStart(4, '0')}`
 }
 
 function PageHeading({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: React.ReactNode }) {
@@ -218,10 +280,10 @@ function Overview({ store, collected, outstanding, overdueCount, openPage, newDo
   return <>
     <PageHeading eyebrow={`${new Date().toLocaleDateString('en-GB', { weekday: 'long' }).toUpperCase()}, YOUR WORKSPACE AT A GLANCE`} title={`${greeting()}, NexTone`} subtitle="Here’s what’s happening with your business today." action={<Button onClick={() => newDocument('quotation')}><Plus size={17}/> Create quotation</Button>} />
     <div className="stats-grid">
-      <StatCard icon={Banknote} label="Collected this month" value={money(collected)} change="Payments received" tone="teal" />
-      <StatCard icon={FileCheck2} label="Outstanding balance" value={money(outstanding)} change={overdueCount ? `${overdueCount} invoice${overdueCount > 1 ? 's' : ''} overdue` : 'No overdue invoices'} tone={overdueCount ? 'rose' : 'amber'} />
-      <StatCard icon={ClipboardList} label="Active quotations" value={String(store.documents.filter(d => d.type === 'quotation' && !['converted'].includes(d.status)).length).padStart(2, '0')} change={`${totalQuotes} total quotations`} tone="blue" />
-      <StatCard icon={Users} label="Total customers" value={String(store.customers.length).padStart(2, '0')} change="In your address book" tone="violet" />
+      <StatCard icon={Banknote} label="Collected this month" value={money(collected)} change="Payments received" tone="teal" onClick={() => openPage('Documents')} />
+      <StatCard icon={FileCheck2} label="Outstanding balance" value={money(outstanding)} change={overdueCount ? `${overdueCount} invoice${overdueCount > 1 ? 's' : ''} overdue` : 'No overdue invoices'} tone={overdueCount ? 'rose' : 'amber'} onClick={() => openPage('Documents')} />
+      <StatCard icon={ClipboardList} label="Active quotations" value={String(store.documents.filter(d => d.type === 'quotation' && !['converted'].includes(d.status)).length).padStart(2, '0')} change={`${totalQuotes} total quotations`} tone="blue" onClick={() => openPage('Documents')} />
+      <StatCard icon={Users} label="Total customers" value={String(store.customers.length).padStart(2, '0')} change="In your address book" tone="violet" onClick={() => openPage('Customers')} />
     </div>
     <div className="overview-grid">
       <section className="panel revenue-panel"><div className="panel-title-row"><div><div className="panel-kicker">YOUR MOMENTUM</div><h2>Revenue collected</h2></div><span className="select-static">Last 6 months <ChevronDown size={14}/></span></div><div className="revenue-total"><strong>{money(data.reduce((sum, x) => sum + x.value, 0))}</strong><span className="positive"><TrendingUp size={14}/> Payment history</span></div><div className="chart-area"><div className="chart-guides"><span>UGX {(max / 1000).toFixed(0)}k</span><span>UGX {(max / 2000).toFixed(0)}k</span><span>UGX 0</span></div><div className="bars">{data.map((entry, i) => <div className="bar-column" key={entry.label}><div className="bar-track"><div className={`bar-fill ${i === data.length - 1 ? 'bright' : ''}`} style={{ height: `${Math.max(4, entry.value / max * 100)}%` }} title={money(entry.value)} /></div><span>{entry.label}</span></div>)}</div></div></section>
@@ -232,12 +294,93 @@ function Overview({ store, collected, outstanding, overdueCount, openPage, newDo
         <QuickAction icon={Package} title="Add a catalog item" detail="Save a product or service" onClick={() => setModal('item')}/>
       </div></section>
     </div>
-    <div className="bottom-grid"><section className="panel recent-panel"><div className="panel-title-row"><div><div className="panel-kicker">THE LATEST</div><h2>Recent documents</h2></div><button className="text-link" onClick={() => openPage('Documents')}>View all <ArrowRight size={15}/></button></div><div className="table-wrap"><table><thead><tr><th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>{recent.map(doc => <DocumentRow key={doc.id} doc={doc} payments={store.payments} onClick={() => openDoc(doc)} />)}</tbody></table>{recent.length === 0 && <EmptyState icon={FileText} title="Nothing here yet" detail="Create your first quotation to get going."/>}</div></section><section className="panel activity-panel"><div className="panel-title-row"><div><div className="panel-kicker">YOUR BUSINESS</div><h2>At a glance</h2></div><Activity size={18} className="muted-icon"/></div><div className="business-rows"><BusinessMetric icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, '0')} color="teal"/><BusinessMetric icon={BookOpenText} label="Quotes sent" value={String(totalQuotes).padStart(2, '0')} color="blue"/><BusinessMetric icon={WalletCards} label="Payments recorded" value={String(store.payments.length).padStart(2, '0')} color="green"/><BusinessMetric icon={Clock3} label="Waiting on payment" value={String(invoices.filter(d => docTotal(d) > paidFor(store.payments, d.id)).length).padStart(2, '0')} color="rose"/></div><div className="activity-footer"><span className="activity-avatars"><i>N</i><i>T</i><i>J</i></span><span>Built around your customers</span><ArrowUpRight size={14}/></div></section></div>
+    <div className="bottom-grid">
+      <section className="panel recent-panel">
+        <div className="panel-title-row">
+          <div><div className="panel-kicker">THE LATEST</div><h2>Recent documents</h2></div>
+          <button className="text-link" onClick={() => openPage('Documents')}>View all <ArrowRight size={15}/></button>
+        </div>
+        {/* Desktop View */}
+        <div className="table-wrap desktop-only-table">
+          <table>
+            <thead>
+              <tr><th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>AMOUNT</th><th>STATUS</th><th></th></tr>
+            </thead>
+            <tbody>
+              {recent.map(doc => <DocumentRow key={doc.id} doc={doc} payments={store.payments} onClick={() => openDoc(doc)} />)}
+            </tbody>
+          </table>
+        </div>
+        {/* Mobile View */}
+        <div className="mobile-docs-list">
+          {recent.map(doc => {
+            const paid = paidFor(store.payments, doc.id); const total = docTotal(doc)
+            const status = isInvoice(doc) ? (paid >= total ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
+            return (
+              <div key={doc.id} className="mobile-doc-card" onClick={() => openDoc(doc)}>
+                <div className="mobile-doc-top">
+                  <div className="doc-cell">
+                    <span className={`doc-type-icon ${doc.type}`}><FileText size={15}/></span>
+                    <div><strong>{doc.number}</strong><small>{doc.type}</small></div>
+                  </div>
+                  <StatusPill status={status}/>
+                </div>
+                <div className="mobile-doc-body">
+                  <div className="mobile-doc-customer">{doc.customer_name}</div>
+                  <div className="mobile-doc-amount">{money(total)}</div>
+                </div>
+                <div className="mobile-doc-meta">
+                  <span>{dateFmt(doc.issue_date)}</span>
+                  <span style={{ color: 'var(--teal-text)', fontWeight: 600 }}>Tap to view &rarr;</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {recent.length === 0 && <EmptyState icon={FileText} title="Nothing here yet" detail="Create your first quotation to get going."/>}
+      </section>
+      <section className="panel activity-panel">
+        <div className="panel-title-row">
+          <div><div className="panel-kicker">YOUR BUSINESS</div><h2>At a glance</h2></div>
+          <Activity size={18} className="muted-icon"/>
+        </div>
+        <div className="business-rows">
+          <BusinessMetric icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, '0')} color="teal" onClick={() => openPage('Documents')}/>
+          <BusinessMetric icon={BookOpenText} label="Quotes sent" value={String(totalQuotes).padStart(2, '0')} color="blue" onClick={() => openPage('Documents')}/>
+          <BusinessMetric icon={WalletCards} label="Payments recorded" value={String(store.payments.length).padStart(2, '0')} color="green" onClick={() => openPage('Documents')}/>
+          <BusinessMetric icon={Clock3} label="Waiting on payment" value={String(invoices.filter(d => docTotal(d) > paidFor(store.payments, d.id)).length).padStart(2, '0')} color="rose" onClick={() => openPage('Documents')}/>
+        </div>
+        <div className="activity-footer">
+          <button className="text-link" onClick={() => openPage('Customers')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: 0 }}>
+            <span className="activity-avatars"><i>N</i><i>T</i><i>J</i></span>
+            <span>Manage {store.customers.length} customer records</span>
+            <ArrowUpRight size={14}/>
+          </button>
+        </div>
+      </section>
+    </div>
   </>
 }
-function StatCard({ icon: Icon, label, value, change, tone }: { icon: React.ElementType; label: string; value: string; change: string; tone: string }) { return <div className="stat-card"><div className="stat-top"><span className={`stat-icon ${tone}`}><Icon size={19}/></span><button className="more-dot" aria-label="More"><Ellipsis size={18}/></button></div><div className="stat-label">{label}</div><strong className="stat-value">{value}</strong><div className={`stat-change ${tone}`}><span className="change-dot"/>{change}</div></div> }
+function StatCard({ icon: Icon, label, value, change, tone, onClick }: { icon: React.ElementType; label: string; value: string; change: string; tone: string; onClick?: () => void }) {
+  return <div className={`stat-card ${onClick ? 'click-row' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <div className="stat-top">
+      <span className={`stat-icon ${tone}`}><Icon size={19}/></span>
+      <button className="more-dot" aria-label="Open page" onClick={(e) => { e.stopPropagation(); onClick?.(); }}><ChevronRight size={18}/></button>
+    </div>
+    <div className="stat-label">{label}</div>
+    <strong className="stat-value">{value}</strong>
+    <div className={`stat-change ${tone}`}><span className="change-dot"/>{change}</div>
+  </div>
+}
 function QuickAction({ icon: Icon, title, detail, onClick }: { icon: React.ElementType; title: string; detail: string; onClick: () => void }) { return <button className="quick-action" onClick={onClick}><span className="quick-icon"><Icon size={18}/></span><span className="quick-text"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={16} className="quick-arrow"/></button> }
-function BusinessMetric({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) { return <div className="business-metric"><span className={`mini-icon ${color}`}><Icon size={15}/></span><span>{label}</span><strong>{value}</strong></div> }
+function BusinessMetric({ icon: Icon, label, value, color, onClick }: { icon: React.ElementType; label: string; value: string; color: string; onClick?: () => void }) {
+  return <div className={`business-metric ${onClick ? 'click-row' : ''}`} onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <span className={`mini-icon ${color}`}><Icon size={15}/></span>
+    <span>{label}</span>
+    <strong>{value}</strong>
+    {onClick && <ChevronRight size={13} style={{ marginLeft: '6px', color: 'var(--ink-faint)' }}/>}
+  </div>
+}
 function DocumentRow({ doc, payments, onClick }: { doc: SalesDocument; payments: Payment[]; onClick: () => void }) {
   const paid = paidFor(payments, doc.id); const total = docTotal(doc)
   const status = isInvoice(doc) ? (paid >= total ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
@@ -248,23 +391,129 @@ function EmptyState({ icon: Icon, title, detail, action }: { icon: React.Element
 
 function DocumentsPage({ documents, allDocuments, payments, settings, query, setQuery, newDocument, openDoc, addPayment, onDelete }: { documents: SalesDocument[]; allDocuments: SalesDocument[]; payments: Payment[]; settings: Store['settings']; query: string; setQuery: (q: string) => void; newDocument: (type: DocumentType) => void; openDoc: (doc: SalesDocument) => void; addPayment: (doc: SalesDocument) => void; onDelete: (doc: SalesDocument) => void }) {
   const [tab, setTab] = useState('All documents')
+  const [pageNumber, setPageNumber] = useState(1)
+  const pageSize = 8
+
   const tabs = ['All documents', 'Quotations', 'Invoices']
-  const rows = documents.filter(doc => tab === 'All documents' || (tab === 'Quotations' ? doc.type === 'quotation' : doc.type === 'invoice'))
+  const filtered = documents.filter(doc => tab === 'All documents' || (tab === 'Quotations' ? doc.type === 'quotation' : doc.type === 'invoice'))
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentPage = Math.min(pageNumber, totalPages)
+  const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   const quoteCount = allDocuments.filter(d => d.type === 'quotation').length
   const invoiceCount = allDocuments.filter(d => d.type === 'invoice').length
+  const outstandingTotal = allDocuments.filter(isInvoice).reduce((sum, d) => sum + Math.max(0, docTotal(d) - paidFor(payments, d.id)), 0)
+
   return <><PageHeading eyebrow="SALES & PAPERWORK" title="Documents" subtitle="Create quotations, track invoices, and keep every customer receipt in one place." action={<div className="split-action"><Button variant="secondary" onClick={() => newDocument('invoice')}><Plus size={16}/> Invoice</Button><Button onClick={() => newDocument('quotation')}><Plus size={16}/> New quotation</Button></div>}/>
-    <div className="document-stats"><div><span className="round-mini teal"><FileText size={17}/></span><span>Quotations</span><strong>{quoteCount}</strong></div><div><span className="round-mini blue"><ReceiptText size={17}/></span><span>Invoices</span><strong>{invoiceCount}</strong></div><div><span className="round-mini amber"><Clock3 size={17}/></span><span>Outstanding</span><strong>{money(allDocuments.filter(isInvoice).reduce((sum, d) => sum + Math.max(0, docTotal(d) - paidFor(payments, d.id)), 0))}</strong></div></div>
-    <section className="panel content-panel"><div className="list-toolbar"><div className="tabs">{tabs.map(name => <button className={tab === name ? 'selected' : ''} key={name} onClick={() => setTab(name)}>{name}<span>{name === 'Quotations' ? quoteCount : name === 'Invoices' ? invoiceCount : allDocuments.length}</span></button>)}</div><SearchBox value={query} onChange={setQuery} placeholder="Search by number, name, or status"/></div>
-      <div className="table-wrap full-table"><table><thead><tr><th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>DUE DATE</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{rows.map(doc => { const paid = paidFor(payments, doc.id); const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status; return <tr key={doc.id} className="click-row"><td onClick={() => openDoc(doc)}><div className="doc-cell"><span className={`doc-type-icon ${doc.type}`}><FileText size={15}/></span><span><strong>{doc.number}</strong><small>{doc.type}</small></span></div></td><td onClick={() => openDoc(doc)}><span className="customer-name-cell">{doc.customer_name}</span></td><td onClick={() => openDoc(doc)}><span className="date-cell">{dateFmt(doc.issue_date)}</span></td><td onClick={() => openDoc(doc)}><span className="date-cell">{isInvoice(doc) ? dateFmt(doc.due_date) : '—'}</span></td><td onClick={() => openDoc(doc)}><strong className="amount-cell">{money(docTotal(doc))}</strong></td><td onClick={() => openDoc(doc)}><StatusPill status={status}/></td><td><div className="row-actions">{isInvoice(doc) && paid < docTotal(doc) && <button title="Record payment" onClick={() => addPayment(doc)}><WalletCards size={16}/></button>}<button title="Download" onClick={async () => downloadDocument(doc, payments, settings)}><Download size={16}/></button><button title="Delete" onClick={() => onDelete(doc)}><Trash2 size={15}/></button></div></td></tr> })}</tbody></table>{rows.length === 0 && <EmptyState icon={FileClock} title={query ? 'No matches found' : 'No documents yet'} detail={query ? 'Try a different search.' : 'Create your first quotation or invoice to see it here.'}/>}</div>
-      <div className="table-footer"><span>Showing <strong>{rows.length}</strong> of <strong>{allDocuments.length}</strong> documents</span><span className="pagination"><button disabled><ArrowLeft size={14}/></button><button className="page-number">1</button><button disabled><ArrowRight size={14}/></button></span></div>
+    <div className="document-stats">
+      <div className="click-row" onClick={() => { setTab('Quotations'); setPageNumber(1); }} style={{ cursor: 'pointer' }}><span className="round-mini teal"><FileText size={17}/></span><span>Quotations</span><strong>{quoteCount}</strong></div>
+      <div className="click-row" onClick={() => { setTab('Invoices'); setPageNumber(1); }} style={{ cursor: 'pointer' }}><span className="round-mini blue"><ReceiptText size={17}/></span><span>Invoices</span><strong>{invoiceCount}</strong></div>
+      <div><span className="round-mini amber"><Clock3 size={17}/></span><span>Outstanding</span><strong>{money(outstandingTotal)}</strong></div>
+    </div>
+    <section className="panel content-panel">
+      <div className="list-toolbar">
+        <div className="tabs">
+          {tabs.map(name => (
+            <button className={tab === name ? 'selected' : ''} key={name} onClick={() => { setTab(name); setPageNumber(1); }}>
+              {name}
+              <span>{name === 'Quotations' ? quoteCount : name === 'Invoices' ? invoiceCount : allDocuments.length}</span>
+            </button>
+          ))}
+        </div>
+        <SearchBox value={query} onChange={q => { setQuery(q); setPageNumber(1); }} placeholder="Search by number, name, or status"/>
+      </div>
+      {/* Desktop View */}
+      <div className="table-wrap full-table desktop-only-table">
+        <table>
+          <thead>
+            <tr>
+              <th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>DUE DATE</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(doc => {
+              const paid = paidFor(payments, doc.id)
+              const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
+              return <tr key={doc.id} className="click-row">
+                <td onClick={() => openDoc(doc)}><div className="doc-cell"><span className={`doc-type-icon ${doc.type}`}><FileText size={15}/></span><span><strong>{doc.number}</strong><small>{doc.type}</small></span></div></td>
+                <td onClick={() => openDoc(doc)}><span className="customer-name-cell">{doc.customer_name}</span></td>
+                <td onClick={() => openDoc(doc)}><span className="date-cell">{dateFmt(doc.issue_date)}</span></td>
+                <td onClick={() => openDoc(doc)}><span className="date-cell">{isInvoice(doc) ? dateFmt(doc.due_date) : '—'}</span></td>
+                <td onClick={() => openDoc(doc)}><strong className="amount-cell">{money(docTotal(doc))}</strong></td>
+                <td onClick={() => openDoc(doc)}><StatusPill status={status}/></td>
+                <td>
+                  <div className="row-actions">
+                    {isInvoice(doc) && paid < docTotal(doc) && <button title="Record payment" onClick={() => addPayment(doc)}><WalletCards size={16}/></button>}
+                    <button title="Download PDF" onClick={async () => downloadDocument(doc, payments, settings, 'pdf')}><Download size={16}/></button>
+                    <button title="Download PNG" onClick={async () => downloadDocument(doc, payments, settings, 'png')}><Printer size={16}/></button>
+                    <button title="Delete" onClick={() => onDelete(doc)}><Trash2 size={15}/></button>
+                  </div>
+                </td>
+              </tr>
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="mobile-docs-list">
+        {rows.map(doc => {
+          const paid = paidFor(payments, doc.id)
+          const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
+          return (
+            <div key={doc.id} className="mobile-doc-card" onClick={() => openDoc(doc)}>
+              <div className="mobile-doc-top">
+                <div className="doc-cell">
+                  <span className={`doc-type-icon ${doc.type}`}><FileText size={16}/></span>
+                  <div><strong>{doc.number}</strong><small>{doc.type}</small></div>
+                </div>
+                <StatusPill status={status}/>
+              </div>
+              <div className="mobile-doc-body">
+                <div className="mobile-doc-customer">{doc.customer_name}</div>
+                <div className="mobile-doc-amount">{money(docTotal(doc))}</div>
+              </div>
+              <div className="mobile-doc-meta">
+                <span>Issued: {dateFmt(doc.issue_date)}</span>
+                {isInvoice(doc) && <span>Due: {dateFmt(doc.due_date)}</span>}
+              </div>
+              <div className="mobile-doc-actions" onClick={e => e.stopPropagation()}>
+                {isInvoice(doc) && paid < docTotal(doc) && (
+                  <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} onClick={() => addPayment(doc)}>
+                    <WalletCards size={14}/> Pay
+                  </button>
+                )}
+                <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PDF" onClick={() => downloadDocument(doc, payments, settings, 'pdf')}>
+                  <Download size={13}/> PDF
+                </button>
+                <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PNG" onClick={() => downloadDocument(doc, payments, settings, 'png')}>
+                  <Printer size={13}/> PNG
+                </button>
+                <button className="icon-button" title="Delete" onClick={() => onDelete(doc)}>
+                  <Trash2 size={15}/>
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {filtered.length === 0 && <EmptyState icon={FileClock} title={query ? 'No matches found' : 'No documents yet'} detail={query ? 'Try a different search.' : 'Create your first quotation or invoice to see it here.'}/>}
+      <div className="table-footer">
+        <span>Showing <strong>{rows.length}</strong> of <strong>{filtered.length}</strong> {filtered.length === 1 ? 'document' : 'documents'}</span>
+        <span className="pagination">
+          <button disabled={currentPage <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} aria-label="Previous page"><ArrowLeft size={14}/></button>
+          <span className="page-number" style={{ padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--accent-teal-bg)', color: 'var(--accent-teal-text)', fontSize: '11px', fontWeight: 700 }}>{currentPage} / {totalPages}</span>
+          <button disabled={currentPage >= totalPages} onClick={() => setPageNumber(p => Math.min(totalPages, p + 1))} aria-label="Next page"><ArrowRight size={14}/></button>
+        </span>
+      </div>
     </section>
   </>
 }
 
-function CustomersPage({ customers, documents, query, setQuery, create, edit, remove, viewStatement }: { customers: Customer[]; documents: SalesDocument[]; query: string; setQuery: (q: string) => void; create: () => void; edit: (customer: Customer) => void; remove: (customer: Customer) => void; viewStatement: (customer: Customer) => void }) {
+function CustomersPage({ customers, documents, query, setQuery, create, edit, remove, viewStatement, newDocumentForCustomer }: { customers: Customer[]; documents: SalesDocument[]; query: string; setQuery: (q: string) => void; create: () => void; edit: (customer: Customer) => void; remove: (customer: Customer) => void; viewStatement: (customer: Customer) => void; newDocumentForCustomer: (customer: Customer) => void }) {
   const filtered = customers.filter(c => `${c.name} ${c.phone} ${c.email} ${c.address}`.toLowerCase().includes(query.toLowerCase()))
   return <><PageHeading eyebrow="PEOPLE MAKE THE WORK" title="Customers" subtitle="A thoughtful little address book for everyone you work with." action={<Button onClick={create}><Plus size={17}/> Add customer</Button>}/><div className="list-summary-row"><div className="list-summary"><span className="round-mini violet"><Users size={17}/></span><div><strong>{customers.length} customers</strong><small>Contacts saved in your workspace</small></div></div><SearchBox value={query} onChange={setQuery} placeholder="Search customers"/></div>
-    {filtered.length ? <div className="customers-grid">{filtered.map((customer, index) => { const docs = documents.filter(d => d.customer_id === customer.id); const tint = ['mint', 'lavender', 'peach', 'sky'][index % 4]; return <article className="customer-card" key={customer.id}><div className="customer-card-top"><div className={`customer-avatar ${tint}`}>{customer.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}</div><button className="icon-button" aria-label="Edit customer" onClick={() => edit(customer)}><Pencil size={15}/></button></div><h3>{customer.name}</h3><div className="customer-contact"><span><Phone size={14}/>{customer.phone || 'No phone provided'}</span><span><Mail size={14}/>{customer.email || 'No email provided'}</span><span><Globe2 size={14}/>{customer.address || 'No address provided'}</span></div><div className="customer-card-footer"><span>{docs.length} document{docs.length !== 1 ? 's' : ''}</span><div><button className="text-link" onClick={() => viewStatement(customer)}>Statement <ArrowUpRight size={14}/></button><button className="icon-button remove-customer" aria-label="Delete customer" onClick={() => remove(customer)}><Trash2 size={14}/></button></div></div></article> })}</div> : <section className="panel"><EmptyState icon={Users} title={query ? 'No customers found' : 'Your customer list is ready'} detail={query ? 'Try another name or search term.' : 'Add your first customer to start creating quotations and invoices.'} action={<Button onClick={create}><Plus size={16}/> Add a customer</Button>}/></section>}
+    {filtered.length ? <div className="customers-grid">{filtered.map((customer, index) => { const docs = documents.filter(d => d.customer_id === customer.id); const tint = ['mint', 'lavender', 'peach', 'sky'][index % 4]; return <article className="customer-card" key={customer.id}><div className="customer-card-top"><div className={`customer-avatar ${tint}`}>{customer.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}</div><button className="icon-button" aria-label="Edit customer" onClick={() => edit(customer)}><Pencil size={15}/></button></div><h3>{customer.name}</h3><div className="customer-contact"><span><Phone size={14}/>{customer.phone || 'No phone provided'}</span><span><Mail size={14}/>{customer.email || 'No email provided'}</span><span><Globe2 size={14}/>{customer.address || 'No address provided'}</span></div><div className="customer-card-footer"><span>{docs.length} document{docs.length !== 1 ? 's' : ''}</span><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><button className="text-link" onClick={() => newDocumentForCustomer(customer)}>+ Quote</button><button className="text-link" onClick={() => viewStatement(customer)}>Statement <ArrowUpRight size={14}/></button><button className="icon-button remove-customer" aria-label="Delete customer" onClick={() => remove(customer)}><Trash2 size={14}/></button></div></div></article> })}</div> : <section className="panel"><EmptyState icon={Users} title={query ? 'No customers found' : 'Your customer list is ready'} detail={query ? 'Try another name or search term.' : 'Add your first customer to start creating quotations and invoices.'} action={<Button onClick={create}><Plus size={16}/> Add a customer</Button>}/></section>}
   </>
 }
 
@@ -286,16 +535,237 @@ function StatementsPage({ store, openStatement }: { store: Store; openStatement:
     const paid = invoices.reduce((sum, d) => sum + paidFor(store.payments, d.id), 0)
     return { customer, invoices, total, paid, balance: Math.max(0, total - paid) }
   })
-  return <><PageHeading eyebrow="CLEAR & FRIENDLY ACCOUNTING" title="Customer statements" subtitle="See what has been invoiced, paid, and remains outstanding."/><section className="panel content-panel"><div className="table-wrap full-table"><table><thead><tr><th>CUSTOMER</th><th>INVOICES</th><th>AMOUNT INVOICED</th><th>AMOUNT PAID</th><th>BALANCE DUE</th><th></th></tr></thead><tbody>{aggregate.map(({ customer, invoices, total, paid, balance }) => <tr key={customer.id} className="click-row" onClick={() => openStatement(customer.id)}><td><div className="doc-cell"><span className="customer-avatar mini-avatar mint">{customer.name.slice(0, 1)}</span><span><strong>{customer.name}</strong><small>{customer.phone}</small></span></div></td><td>{invoices.length}</td><td>{money(total)}</td><td className="green-text">{money(paid)}</td><td className={balance ? 'rose-text' : 'green-text'}>{money(balance)}</td><td><button className="icon-button" onClick={e => { e.stopPropagation(); openStatement(customer.id) }} title="Open statement"><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table>{aggregate.length === 0 && <EmptyState icon={FileChartColumnIncreasing} title="No invoice activity" detail="Create an invoice and its customer will appear here."/>}</div></section></>
+  return (
+    <>
+      <PageHeading eyebrow="CLEAR & FRIENDLY ACCOUNTING" title="Customer statements" subtitle="See what has been invoiced, paid, and remains outstanding."/>
+      <section className="panel content-panel">
+        <div className="table-wrap full-table desktop-only-table">
+          <table>
+            <thead>
+              <tr><th>CUSTOMER</th><th>INVOICES</th><th>AMOUNT INVOICED</th><th>AMOUNT PAID</th><th>BALANCE DUE</th><th></th></tr>
+            </thead>
+            <tbody>
+              {aggregate.map(({ customer, invoices, total, paid, balance }) => (
+                <tr key={customer.id} className="click-row" onClick={() => openStatement(customer.id)}>
+                  <td>
+                    <div className="doc-cell">
+                      <span className="customer-avatar mini-avatar mint">{customer.name.slice(0, 1)}</span>
+                      <span><strong>{customer.name}</strong><small>{customer.phone}</small></span>
+                    </div>
+                  </td>
+                  <td>{invoices.length}</td>
+                  <td>{money(total)}</td>
+                  <td className="green-text">{money(paid)}</td>
+                  <td className={balance ? 'rose-text' : 'green-text'}>{money(balance)}</td>
+                  <td>
+                    <button className="icon-button" onClick={e => { e.stopPropagation(); openStatement(customer.id) }} title="Open statement">
+                      <ArrowUpRight size={17}/>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="mobile-docs-list">
+          {aggregate.map(({ customer, invoices, total, paid, balance }) => (
+            <div key={customer.id} className="mobile-doc-card" onClick={() => openStatement(customer.id)}>
+              <div className="mobile-doc-top">
+                <div className="doc-cell">
+                  <span className="customer-avatar mini-avatar mint">{customer.name.slice(0, 1)}</span>
+                  <div>
+                    <strong>{customer.name}</strong>
+                    <small>{invoices.length} {invoices.length === 1 ? 'invoice' : 'invoices'}</small>
+                  </div>
+                </div>
+                <span className={`status-pill ${balance === 0 ? 'paid' : 'partial'}`}>
+                  <i/>{balance === 0 ? 'Settled' : 'Due'}
+                </span>
+              </div>
+              <div className="mobile-doc-body">
+                <div style={{ display: 'grid', gap: '2px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--ink-muted)' }}>Invoiced: {money(total)}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--accent-teal-text)' }}>Paid: {money(paid)}</span>
+                </div>
+                <div className="mobile-doc-amount" style={{ color: balance > 0 ? 'var(--accent-rose-text)' : 'var(--accent-teal-text)' }}>
+                  {money(balance)}
+                </div>
+              </div>
+              <div className="mobile-doc-actions" onClick={e => e.stopPropagation()}>
+                <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 10px', width: '100%' }} onClick={() => openStatement(customer.id)}>
+                  View Statement <ArrowUpRight size={14}/>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {aggregate.length === 0 && <EmptyState icon={FileChartColumnIncreasing} title="No invoice activity" detail="Create an invoice and its customer will appear here."/>}
+      </section>
+    </>
+  )
 }
 
-function SettingsPage({ store, save, editing, setEditing, notice }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void }) {
+function SettingsPage({ store, save, editing, setEditing, notice, syncStore }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean> }) {
   const [form, setForm] = useState(store.settings)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => setForm(store.settings), [store.settings])
   const change = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }))
   const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!await save(form)) return; setEditing(false); notice('Company details updated.') }
-  return <><PageHeading eyebrow="MAKE IT YOURS" title="Settings" subtitle="Your business details show up on quotations, invoices, receipts, and statements." action={editing ? <Button variant="secondary" onClick={() => { setForm(store.settings); setEditing(false) }}><X size={16}/> Cancel</Button> : <Button onClick={() => setEditing(true)}><Pencil size={16}/> Edit details</Button>}/>
-    <form className="settings-layout" onSubmit={submit}><section className="panel settings-card"><div className="settings-card-head"><span className="round-mini teal"><BriefcaseBusiness size={17}/></span><div><strong>Business identity</strong><small>The public face of your brand on every document.</small></div></div><div className="settings-fields"><Field label="Company name" value={form.name} disabled={!editing} onChange={value => change('name', value)} required/><Field label="Tagline" value={form.tagline} disabled={!editing} onChange={value => change('tagline', value)}/><Field label="Phone number" value={form.phone} disabled={!editing} onChange={value => change('phone', value)} icon={Phone}/><Field label="Email address" value={form.email} disabled={!editing} onChange={value => change('email', value)} icon={Mail} type="email"/><Field label="Website" value={form.website} disabled={!editing} onChange={value => change('website', value)} icon={Globe2}/><Field label="Business address" value={form.address} disabled={!editing} onChange={value => change('address', value)} wide/><Field label="Logo image URL" value={form.logo_url} disabled={!editing} onChange={value => change('logo_url', value)} wide hint="Paste a public image URL to show your logo on documents."/><Field label="Default document note" value={form.default_notes} disabled={!editing} onChange={value => change('default_notes', value)} wide textarea/></div>{editing && <div className="settings-footer"><span><ShieldCheck size={15}/> Only your owner account can manage these settings.</span><Button type="submit"><Check size={16}/> Save changes</Button></div>}</section><aside className="panel preview-card"><div className="preview-kicker">DOCUMENT PREVIEW</div><div className="preview-sheet"><div className="preview-orb"/><div className="preview-brand"><span className="brand-mark small"><span/><span/></span><span><strong>{form.name || 'NexTone'}</strong><small>{form.tagline || 'Printing & Branding'}</small></span></div><div className="preview-label">QUOTATION</div><div className="preview-number">#ORD-2026-0006</div><div className="preview-date">05/11/2026</div><div className="preview-rule"/><strong className="preview-title">Made with care,<br/>just for you.</strong><p>{form.default_notes}</p><div className="preview-footer">{form.website || 'nextone.ug'} <span>·</span> {form.phone || '+256 756 286 160'}</div></div><p className="preview-help">Your company details and notes appear at the bottom of every NexTone document.</p></aside></form>
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        setIsProcessing(true)
+        const text = String(event.target?.result || '')
+        const imported = parseBackupJson(text)
+        const success = await syncStore(imported)
+        if (success) {
+          notice(`Imported ${imported.customers.length} customers, ${imported.catalog.length} catalog items, and ${imported.documents.length} documents directly to database!`, 'success')
+        }
+      } catch (err) {
+        notice(err instanceof Error ? err.message : 'Invalid backup JSON file', 'error')
+      } finally {
+        setIsProcessing(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const handleResetToOfficialBackup = async () => {
+    if (!window.confirm('Restore database from the official backup (Mr. Timothy, John k, Mr. Setimba, 14 products, ORD-2026-0100, INV-2026-0100, INV-2026-0101)? This will sync directly into the database.')) {
+      return
+    }
+    try {
+      setIsProcessing(true)
+      const success = await syncStore(initialBackupStore)
+      if (success) {
+        notice('Database successfully synchronized with official backup records!', 'success')
+      }
+    } catch (err) {
+      notice(err instanceof Error ? err.message : 'Could not restore backup', 'error')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  return <>
+    <PageHeading eyebrow="MAKE IT YOURS" title="Settings" subtitle="Your business details show up on quotations, invoices, receipts, and statements." action={editing ? <Button variant="secondary" onClick={() => { setForm(store.settings); setEditing(false) }}><X size={16}/> Cancel</Button> : <Button onClick={() => setEditing(true)}><Pencil size={16}/> Edit details</Button>}/>
+    <form className="settings-layout" onSubmit={submit}>
+      <section className="panel settings-card">
+        <div className="settings-card-head">
+          <span className="round-mini teal"><BriefcaseBusiness size={17}/></span>
+          <div>
+            <strong>Business identity</strong>
+            <small>The public face of your brand on every document.</small>
+          </div>
+        </div>
+        <div className="settings-fields">
+          <Field label="Company name" value={form.name} disabled={!editing} onChange={value => change('name', value)} required/>
+          <Field label="Tagline" value={form.tagline} disabled={!editing} onChange={value => change('tagline', value)}/>
+          <Field label="Phone number" value={form.phone} disabled={!editing} onChange={value => change('phone', value)} icon={Phone}/>
+          <Field label="Email address" value={form.email} disabled={!editing} onChange={value => change('email', value)} icon={Mail} type="email"/>
+          <Field label="Website" value={form.website} disabled={!editing} onChange={value => change('website', value)} icon={Globe2}/>
+          <Field label="Business address" value={form.address} disabled={!editing} onChange={value => change('address', value)} wide/>
+          <Field label="Logo image URL" value={form.logo_url} disabled={!editing} onChange={value => change('logo_url', value)} wide hint="Paste a public image URL to show your logo on documents."/>
+          <Field label="Default document note" value={form.default_notes} disabled={!editing} onChange={value => change('default_notes', value)} wide textarea/>
+        </div>
+        {editing && <div className="settings-footer">
+          <span><ShieldCheck size={15}/> Only your owner account can manage these settings.</span>
+          <Button type="submit"><Check size={16}/> Save changes</Button>
+        </div>}
+      </section>
+
+      <aside className="panel preview-card">
+        <div className="preview-kicker">DOCUMENT PREVIEW</div>
+        <div className="preview-sheet">
+          <div className="preview-orb"/>
+          <div className="preview-brand">
+            <span className="brand-mark small"><span/><span/></span>
+            <span><strong>{form.name || 'NexTone'}</strong><small>{form.tagline || 'Printing & Branding'}</small></span>
+          </div>
+          <div className="preview-label">INVOICE</div>
+          <div className="preview-number">#INV-2026-0100</div>
+          <div className="preview-date">06/11/2026</div>
+          <div className="preview-rule"/>
+          <strong className="preview-title">Made with care,<br/>just for you.</strong>
+          <p>{form.default_notes}</p>
+          <div className="preview-footer">{form.website || 'nextone.ug'} <span>·</span> {form.phone || '+256 756 286 160'}</div>
+        </div>
+        <p className="preview-help">Your company details and notes appear at the bottom of every NexTone document.</p>
+      </aside>
+    </form>
+
+    <section className="panel database-card" style={{ marginTop: '20px', padding: '24px' }}>
+      <div className="settings-card-head" style={{ marginBottom: '18px' }}>
+        <span className="round-mini teal"><Database size={18}/></span>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <strong style={{ fontSize: '15px' }}>Database & Workspace Data</strong>
+            <span className="status-pill active" style={{ fontSize: '10.5px', padding: '2px 8px' }}>
+              <i/> {isDemo ? 'Local Database Storage' : 'Supabase PostgreSQL'}
+            </span>
+          </div>
+          <small>Manage business records straight in the active database. Import, re-sync official data, or export anytime.</small>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+          <span style={{ fontSize: '11px', color: 'var(--ink-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Customers</span>
+          <strong style={{ fontSize: '20px', color: 'var(--ink-primary)', display: 'block', marginTop: '2px' }}>{store.customers.length}</strong>
+          <small style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>Mr. Timothy, John k, etc.</small>
+        </div>
+        <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+          <span style={{ fontSize: '11px', color: 'var(--ink-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Catalog Items</span>
+          <strong style={{ fontSize: '20px', color: 'var(--ink-primary)', display: 'block', marginTop: '2px' }}>{store.catalog.length}</strong>
+          <small style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>14 products with UGX prices</small>
+        </div>
+        <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+          <span style={{ fontSize: '11px', color: 'var(--ink-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Documents</span>
+          <strong style={{ fontSize: '20px', color: 'var(--ink-primary)', display: 'block', marginTop: '2px' }}>{store.documents.length}</strong>
+          <small style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>1 Quote · 2 Invoices</small>
+        </div>
+        <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+          <span style={{ fontSize: '11px', color: 'var(--ink-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Payments & Receipts</span>
+          <strong style={{ fontSize: '20px', color: 'var(--ink-primary)', display: 'block', marginTop: '2px' }}>{store.payments.length}</strong>
+          <small style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>UGX 90,000 + 40,000</small>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+          onChange={handleFileUpload}
+        />
+        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={isProcessing}>
+          <Upload size={16}/> Import Backup (.json)
+        </Button>
+        <Button variant="secondary" onClick={handleResetToOfficialBackup} disabled={isProcessing}>
+          <RefreshCw size={16}/> Re-sync Official Backup
+        </Button>
+        <Button variant="secondary" onClick={() => { exportBackup(store); notice('Exported complete backup file!', 'success') }}>
+          <Download size={16}/> Export Backup (.json)
+        </Button>
+      </div>
+
+      <div style={{ marginTop: '16px', padding: '12px 14px', background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', color: 'var(--ink-muted)' }}>
+        <ShieldCheck size={16} style={{ color: 'var(--teal-text)', flexShrink: 0 }}/>
+        <span>
+          <strong>Direct Database Storage:</strong> All changes are written directly to database tables (customers, catalog_items, sales_documents, payments, company_settings). A ready-to-run PostgreSQL seed script is also available at <code>supabase/seed_backup_data.sql</code>.
+        </span>
+      </div>
+    </section>
   </>
 }
 
@@ -364,8 +834,8 @@ function DocumentDetail({ document, store, close, edit, duplicate, convert, addP
   const paid = paidFor(store.payments, document.id); const total = docTotal(document); const balance = Math.max(0, total - paid)
   const [exporting, setExporting] = useState(false)
   const exportIt = async (format: 'pdf'|'png') => { setExporting(true); try { await downloadDocument(document, store.payments, store.settings, format); } catch (e) { window.alert(e instanceof Error ? e.message : 'Could not export document.') } finally { setExporting(false) } }
-  return <div className="detail-overlay"><div className="detail-panel"><div className="detail-toolbar"><button className="icon-button back-button" onClick={close}><ArrowLeft size={19}/></button><div><span className="panel-kicker">DOCUMENT DETAILS</span><div className="detail-number">{document.number}</div></div><button className="icon-button" onClick={close} aria-label="Close"><X size={19}/></button></div><div className="detail-action-row"><Button variant="secondary" onClick={() => void exportIt('pdf')} disabled={exporting}><Download size={15}/> PDF</Button><Button variant="secondary" onClick={() => void exportIt('png')} disabled={exporting}><Printer size={15}/> PNG</Button><button className="icon-button" title="More actions" onClick={duplicate}><MoreHorizontal size={20}/></button></div><div className="detail-scroll"><div className="detail-overview"><div><span className={`detail-type ${document.type}`}>{document.type}</span><h2>{document.customer_name}</h2><p>{document.customer_email || document.customer_phone}</p></div><StatusPill status={document.status}/></div><div className="detail-dates"><div><span>ISSUED</span><strong>{dateFmt(document.issue_date)}</strong></div><div><span>{document.type === 'invoice' ? 'DUE DATE' : 'VALID UNTIL'}</span><strong>{dateFmt(document.due_date)}</strong></div></div><div className="detail-items"><div className="detail-items-head"><strong>Items & services</strong><span>{document.items.length} lines</span></div>{document.items.map(item => <div className="detail-item" key={item.id}><div><strong>{item.description}</strong><small>{item.quantity} {item.unit} × {money(item.unit_price)}</small></div><strong>{money(item.quantity * item.unit_price)}</strong></div>)}</div><div className="detail-totals"><div><span>Subtotal</span><strong>{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0))}</strong></div>{document.discount_percent > 0 && <div><span>Discount ({document.discount_percent}%)</span><strong>−{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0) - total)}</strong></div>}<div className="grand"><span>Grand total</span><strong>{money(total)}</strong></div>{document.type === 'invoice' && <><div className="paid-row"><span>Paid to date</span><strong>{money(paid)}</strong></div><div className="balance-row"><span>Balance due</span><strong>{money(balance)}</strong></div></>}</div>{document.notes && <div className="detail-note"><span>NOTE</span><p>{document.notes}</p></div>}
-    {document.type === 'invoice' && <div className="receipts-section"><div className="detail-items-head"><strong>Payments & receipts</strong>{balance > 0 && <button className="text-link" onClick={addPayment}><Plus size={15}/> Add payment</button>}</div>{payments.length ? payments.map(payment => <div className="receipt-row" key={payment.id}><span className="receipt-icon"><ReceiptText size={16}/></span><span><strong>{payment.number}</strong><small>{dateFmt(payment.paid_at)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</small></span><strong>{money(payment.amount)}</strong><button className="icon-button" title="Download receipt" onClick={() => downloadDocument(document, store.payments, store.settings, 'pdf', payment)}><Download size={15}/></button></div>) : <p className="muted-copy">No payments recorded yet.</p>}</div>}
+  return <div className="detail-overlay"><div className="detail-panel"><div className="detail-toolbar"><button className="icon-button back-button" onClick={close}><ArrowLeft size={19}/></button><div><span className="panel-kicker">DOCUMENT DETAILS</span><div className="detail-number">{document.number}</div></div><button className="icon-button" onClick={close} aria-label="Close"><X size={19}/></button></div><div className="detail-action-row"><Button variant="secondary" onClick={() => void exportIt('pdf')} disabled={exporting}><Download size={15}/> Download PDF</Button><Button variant="secondary" onClick={() => void exportIt('png')} disabled={exporting}><Printer size={15}/> Download PNG</Button><button className="icon-button" title="More actions" onClick={duplicate}><MoreHorizontal size={20}/></button></div><div className="detail-scroll"><div className="detail-overview"><div><span className={`detail-type ${document.type}`}>{document.type}</span><h2>{document.customer_name}</h2><p>{document.customer_email || document.customer_phone}</p></div><StatusPill status={document.status}/></div><div className="detail-dates"><div><span>ISSUED</span><strong>{dateFmt(document.issue_date)}</strong></div><div><span>{document.type === 'invoice' ? 'DUE DATE' : 'VALID UNTIL'}</span><strong>{dateFmt(document.due_date)}</strong></div></div><div className="detail-items"><div className="detail-items-head"><strong>Items & services</strong><span>{document.items.length} lines</span></div>{document.items.map(item => <div className="detail-item" key={item.id}><div><strong>{item.description}</strong><small>{item.quantity} {item.unit} × {money(item.unit_price)}</small></div><strong>{money(item.quantity * item.unit_price)}</strong></div>)}</div><div className="detail-totals"><div><span>Subtotal</span><strong>{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0))}</strong></div>{document.discount_percent > 0 && <div><span>Discount ({document.discount_percent}%)</span><strong>−{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0) - total)}</strong></div>}<div className="grand"><span>Grand total</span><strong>{money(total)}</strong></div>{document.type === 'invoice' && <><div className="paid-row"><span>Paid to date</span><strong>{money(paid)}</strong></div><div className="balance-row"><span>Balance due</span><strong>{money(balance)}</strong></div></>}</div>{document.notes && <div className="detail-note"><span>NOTE</span><p>{document.notes}</p></div>}
+    {document.type === 'invoice' && <div className="receipts-section"><div className="detail-items-head"><strong>Payments & receipts</strong>{balance > 0 && <button className="text-link" onClick={addPayment}><Plus size={15}/> Add payment</button>}</div>{payments.length ? payments.map(payment => <div className="receipt-row" key={payment.id}><span className="receipt-icon"><ReceiptText size={16}/></span><span><strong>{payment.number}</strong><small>{dateFmt(payment.paid_at)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</small></span><strong>{money(payment.amount)}</strong><div style={{ display: 'flex', gap: '4px' }}><button className="icon-button" title="Download receipt PDF" onClick={() => downloadDocument(document, store.payments, store.settings, 'pdf', payment)}><Download size={15}/></button><button className="icon-button" title="Download receipt PNG" onClick={() => downloadDocument(document, store.payments, store.settings, 'png', payment)}><Printer size={15}/></button></div></div>) : <p className="muted-copy">No payments recorded yet.</p>}</div>}
     </div><div className="detail-footer"><div className="detail-foot-actions"><Button variant="ghost" onClick={onDelete} className="delete-button"><Trash2 size={15}/> Delete</Button><Button variant="secondary" onClick={edit}><Pencil size={15}/> Edit</Button>{document.type === 'quotation' && document.status !== 'converted' && <Button onClick={convert}><FileCheck2 size={15}/> Make invoice</Button>}{document.type === 'invoice' && balance > 0 && <Button onClick={addPayment}><WalletCards size={15}/> Record payment</Button>}</div><Button variant="ghost" onClick={duplicate}><Plus size={15}/> Duplicate</Button></div></div></div>
 }
 

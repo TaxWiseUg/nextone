@@ -1,0 +1,334 @@
+{
+  "exportedAt": "2026-11-08T08:44:09.184Z",
+  "businessProfile": {
+    "name": "NexTone",
+    "bankName": "",
+    "tagline": "Printing, Branding & Custom Media Solutions",
+    "phone": "+256756286160",
+    "address": "Namasuba",
+    "mobileMoneyNumber": "+256756286160",
+    "defaultCurrency": "UGX",
+    "mobileMoneyMerchant": "",
+    "email": "orders@nextone.ug",
+    "bankSwift": "",
+    "notes": "",
+    "taxNumber": "",
+    "bankAccount": ""
+  },
+  "activeCurrency": "UGX",
+  "customers": [
+    {
+      "address": "",
+      "email": "",
+      "name": "Mr. Timothy",
+      "createdAt": "2026-10-22T11:32:24.179Z",
+      "phone": "+256783282126",
+      "id": "cust_1792668744179_ouwc"
+    },
+    {
+      "id": "cust_1792668723440_b2yu",
+      "phone": "+256 702 628128",
+      "createdAt": "2026-10-22T11:32:03.440Z",
+      "name": "John k",
+      "email": "",
+      "address": ""
+    },
+    {
+      "address": "",
+      "email": "",
+      "name": "Mr. Setimba",
+      "createdAt": "2026-10-22T11:31:30.724Z",
+      "phone": "+97430142020",
+      "id": "cust_1792668690724_29at"
+    }
+  ],
+  "products": [
+    {
+      "category": "Paper Printing",
+      "sku": "NB",
+      "createdAt": "2026-10-31T12:28:22.945Z",
+      "unitPrice": 41000,
+      "name": "Notebook",
+      "id": "prod_1793449702945_qxjw",
+      "description": "5 square homes",
+      "unit": "pcs"
+    },
+    {
+      "category": "Promotional Items",
+      "name": "Umbrellas",
+      "sku": "Um",
+      "createdAt": "2026-10-31T11:55:49.319Z",
+      "unit": "pcs",
+      "description": "Buying and branding",
+      "unitPrice": 35000,
+      "id": "prod_1793447749319_zi3t"
+    },
+    {
+      "sku": "A4s",
+      "createdAt": "2026-10-31T11:50:14.007Z",
+      "category": "Paper Printing",
+      "unitPrice": 700,
+      "name": "A4 sticker",
+      "unit": "sheet",
+      "id": "prod_1793447414007_a0eu"
+    },
+    {
+      "unit": "sheet",
+      "name": "A4 Paper",
+      "sku": "A4",
+      "unitPrice": 600,
+      "category": "Paper Printing",
+      "id": "prod_1793447373301_o9rg",
+      "createdAt": "2026-10-31T11:49:33.301Z"
+    },
+    {
+      "category": "Promotional Items",
+      "id": "prod_1793447127008_ji9x",
+      "description": "Buying price",
+      "createdAt": "2026-10-31T11:45:27.008Z",
+      "unit": "pcs",
+      "name": "Helmet",
+      "sku": "Ht",
+      "unitPrice": 10000
+    },
+    {
+      "unit": "pcs",
+      "createdAt": "2026-10-31T11:44:41.203Z",
+      "sku": "RF",
+      "description": "Buying price",
+      "category": "Promotional Items",
+      "unitPrice": 5000,
+      "name": "Reflectors",
+      "updatedAt": "2026-10-31T11:45:51.400Z",
+      "id": "prod_1793447081203_r8tc"
+    },
+    {
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "name": "Pull-up Banner",
+      "sku": "BNR-ROLL-01",
+      "category": "Banners & Signage",
+      "unit": "pcs",
+      "description": "Heavy duty aluminium cassette stand with anti-curl PVC printed banner graphic.",
+      "unitPrice": 200000,
+      "updatedAt": "2026-10-31T11:46:37.715Z",
+      "id": "prod_1"
+    },
+    {
+      "category": "Apparels & Merchandise",
+      "unit": "pcs",
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "description": "100% combed cotton round neck T-shirt with full color chest DTF print.",
+      "updatedAt": "2026-10-22T12:34:24.127Z",
+      "sku": "TSH-DTF-02",
+      "id": "prod_2",
+      "name": "Branded T-Shirt",
+      "unitPrice": 20000
+    },
+    {
+      "category": "Paper Printing",
+      "id": "prod_3",
+      "unit": "box",
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "description": "Box of 100 premium business cards with double-sided matte or gloss lamination.",
+      "sku": "BC-LAM-03",
+      "name": "Business Cards",
+      "unitPrice": 35000
+    },
+    {
+      "sku": "STK-VIN-04",
+      "unitPrice": 15000,
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "name": "Vinyl Stickers",
+      "category": "Large Format Printing",
+      "unit": "sheet",
+      "id": "prod_4",
+      "description": "A3 waterproof gloss vinyl sticker sheet with custom die-cut labels."
+    },
+    {
+      "id": "prod_5",
+      "unit": "pcs",
+      "name": "Teardrop Flag",
+      "unitPrice": 220000,
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "sku": "FLG-TEAR-05",
+      "category": "Banners & Signage",
+      "description": "Outdoor promotional teardrop flag with flexible carbon pole and water base."
+    },
+    {
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "name": "Branded Mug",
+      "sku": "MUG-PRN-06",
+      "unitPrice": 18000,
+      "unit": "pcs",
+      "description": "White ceramic mug with full wrap-around heat-press corporate logo print.",
+      "id": "prod_6",
+      "category": "Promotional Items"
+    },
+    {
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "category": "Paper Printing",
+      "id": "prod_7",
+      "unitPrice": 65000,
+      "unit": "pack",
+      "description": "Full color digital gloss art paper flyers for marketing campaigns.",
+      "sku": "FLY-A4-07",
+      "name": "Flyers & Brochures"
+    },
+    {
+      "unit": "pcs",
+      "unitPrice": 6000,
+      "description": "Silkscreen printed fabric lanyard with metal hook and plastic card holder.",
+      "createdAt": "2026-10-22T12:31:05.179Z",
+      "name": "Branded Lanyards",
+      "id": "prod_8",
+      "sku": "LND-WVN-08",
+      "category": "Corporate ID"
+    }
+  ],
+  "orders": [
+    {
+      "customerName": "Mr. Timothy",
+      "createdAt": "2026-10-31T14:26:24.863Z",
+      "currency": "UGX",
+      "items": [
+        {
+          "id": "item_1793456755966_vuto",
+          "unitPrice": 41000,
+          "total": 205000,
+          "productId": "prod_1793449702945_qxjw",
+          "productName": "Notebook",
+          "unit": "pcs",
+          "quantity": 5
+        },
+        {
+          "unit": "pcs",
+          "productName": "Umbrellas",
+          "productId": "prod_1793447749319_zi3t",
+          "quantity": 5,
+          "unitPrice": 35000,
+          "id": "item_1793456755967_ab5w",
+          "total": 175000
+        },
+        {
+          "unitPrice": 200000,
+          "quantity": 1,
+          "id": "item_1793456755967_mafq",
+          "productName": "Pull-up Banner",
+          "total": 200000,
+          "unit": "pcs",
+          "productId": "prod_1"
+        }
+      ],
+      "orderDate": "2026-10-31",
+      "taxPercent": 0,
+      "customerPhone": "+256783282126",
+      "id": "ord_1793456784863_6l5k",
+      "customerEmail": "",
+      "status": "pending",
+      "taxAmount": 0,
+      "discountAmount": 0,
+      "customerId": "cust_1792668744179_ouwc",
+      "subtotal": 580000,
+      "totalAmount": 580000,
+      "customerAddress": "",
+      "orderNumber": "ORD-2026-0001",
+      "deliveryDate": "2026-11-02"
+    }
+  ],
+  "invoices": [
+    {
+      "subtotal": 123200,
+      "items": [
+        {
+          "total": 123200,
+          "productName": "General ",
+          "id": "item-1792671604784-1",
+          "quantity": 1,
+          "unitPrice": 123200,
+          "unit": "pcs",
+          "productId": ""
+        }
+      ],
+      "notes": "Payment due upon receipt or within net agreed terms.",
+      "taxAmount": 0,
+      "paymentInstructions": "Payment via Mobile Money",
+      "status": "overdue",
+      "dueDate": "2026-10-31",
+      "createdAt": "2026-10-22T12:24:07.744Z",
+      "invoiceNumber": "INV-2026-0002",
+      "discountAmount": 0,
+      "customerName": "Timothy",
+      "taxPercent": 0,
+      "paidAmount": 100000,
+      "currency": "UGX",
+      "id": "inv_1792671847743_c9os",
+      "customerId": "cust_1792668744179_ouwc",
+      "issueDate": "2026-10-10",
+      "totalAmount": 123200,
+      "balanceDue": 23200,
+      "customerPhone": "+256783282126"
+    },
+    {
+      "taxPercent": 0,
+      "status": "partially_paid",
+      "issueDate": "2026-02-28",
+      "discountAmount": 0,
+      "paymentInstructions": "Payment via Mobile Money",
+      "totalAmount": 1535000,
+      "items": [
+        {
+          "total": 1535000,
+          "unitPrice": 15350,
+          "productName": "Playing cards ",
+          "productId": "",
+          "unit": "pcs",
+          "id": "item-1792668752724-1",
+          "quantity": 100
+        }
+      ],
+      "notes": "Payment due upon receipt or within net agreed terms.",
+      "currency": "UGX",
+      "invoiceNumber": "INV-2026-0001",
+      "id": "inv_1792668875661_jioy",
+      "balanceDue": 635000,
+      "taxAmount": 0,
+      "subtotal": 1535000,
+      "createdAt": "2026-10-22T11:34:35.661Z",
+      "dueDate": "2027-02-01",
+      "customerId": "cust_1792668690724_29at",
+      "customerPhone": "+97430142020",
+      "paidAmount": 900000,
+      "customerName": "Setimba"
+    }
+  ],
+  "payments": [
+    {
+      "invoiceId": "inv_1792671847743_c9os",
+      "invoiceNumber": "INV-2026-0002",
+      "paymentMethod": "mobile_money",
+      "customerId": "cust_1792668744179_ouwc",
+      "id": "pay_1793015681871_wi1t",
+      "createdAt": "2026-10-26T11:54:41.871Z",
+      "amount": 100000,
+      "receiptNumber": "REC-2026-0002",
+      "currency": "UGX",
+      "paymentDate": "2026-10-26",
+      "mobileMoneyNetwork": "MTN",
+      "customerName": "Timothy"
+    },
+    {
+      "receiptNumber": "REC-2026-0001",
+      "createdAt": "2026-10-22T11:35:40.744Z",
+      "mobileMoneyNetwork": "Airtel",
+      "amount": 900000,
+      "id": "pay_1792668940744_l7nf",
+      "customerId": "cust_1792668690724_29at",
+      "currency": "UGX",
+      "invoiceId": "inv_1792668875661_jioy",
+      "customerName": "Setimba",
+      "paymentDate": "2026-10-22",
+      "invoiceNumber": "INV-2026-0001",
+      "paymentMethod": "mobile_money"
+    }
+  ]
+}

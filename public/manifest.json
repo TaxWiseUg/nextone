@@ -1,0 +1,17 @@
+{
+  "name": "NexTone · Orders & Documents",
+  "short_name": "NexTone",
+  "description": "NexTone printing and branding orders, invoices, and receipts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b4d56",
+  "theme_color": "#0b4d56",
+  "icons": [
+    {
+      "src": "/src/assets/images/nextone_app_icon_1793963255164.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
