@@ -10,9 +10,27 @@ export type SalesDocument = {
   status: 'draft' | 'sent' | 'accepted' | 'converted' | 'unpaid' | 'paid' | 'partial' | 'overdue'; issue_date: string;
   due_date: string; source_quote?: string; created_at: string
 }
-export type CompanySettings = { name: string; tagline: string; address: string; phone: string; email: string; website: string; logo_url: string; default_notes: string }
+export type CompanySettings = {
+  name: string; tagline: string; address: string; phone: string; email: string; website: string; logo_url: string; default_notes: string;
+  payment_methods: PaymentMethod[];
+  mobile_money_provider: string;
+  mobile_money_number: string;
+  mobile_money_name: string;
+  bank_name: string;
+  bank_account_name: string;
+  bank_account_number: string;
+  payment_instructions: string;
+}
 export const defaultSettings: CompanySettings = {
   name: 'NexTone', tagline: 'Printing & Branding', address: '', phone: '+256 756 286 160',
   email: 'orders@nextone.ug', website: 'nextone.ug', logo_url: '',
   default_notes: 'We prioritize customer satisfaction. Our team is dedicated to delivering exceptional quality printing and branding solutions, ensuring complete satisfaction on every project.',
+  payment_methods: ['Mobile Money', 'Bank transfer', 'Cash'],
+  mobile_money_provider: 'MTN / Airtel',
+  mobile_money_number: '+256 756 286 160',
+  mobile_money_name: 'NexTone Printing & Branding',
+  bank_name: '',
+  bank_account_name: '',
+  bank_account_number: '',
+  payment_instructions: '',
 }

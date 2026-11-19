@@ -35,6 +35,7 @@ export function sanitizeSequence(num: string): string {
  */
 export const initialBackupStore: Store = {
   settings: {
+    ...defaultSettings,
     name: 'NexTone',
     tagline: 'Printing, Branding & Custom Media Solutions',
     address: 'Namasuba',
@@ -43,6 +44,8 @@ export const initialBackupStore: Store = {
     website: 'nextone.ug',
     logo_url: '',
     default_notes: 'We prioritize customer satisfaction. Our team is dedicated to delivering exceptional quality printing and branding solutions, ensuring complete satisfaction on every project.',
+    mobile_money_number: '+256 756 286 160',
+    mobile_money_name: 'NexTone Printing & Branding',
   },
   customers: [
     {
@@ -344,6 +347,14 @@ export function parseBackupJson(raw: any): Store {
     email: raw.businessProfile?.email || 'orders@nextone.ug',
     address: raw.businessProfile?.address || 'Namasuba',
     default_notes: raw.businessProfile?.notes || defaultSettings.default_notes,
+    payment_methods: Array.isArray(raw.businessProfile?.paymentMethods) ? raw.businessProfile.paymentMethods : defaultSettings.payment_methods,
+    mobile_money_provider: raw.businessProfile?.mobileMoneyProvider || defaultSettings.mobile_money_provider,
+    mobile_money_number: raw.businessProfile?.mobileMoneyNumber || raw.businessProfile?.phone || defaultSettings.mobile_money_number,
+    mobile_money_name: raw.businessProfile?.mobileMoneyName || defaultSettings.mobile_money_name,
+    bank_name: raw.businessProfile?.bankName || '',
+    bank_account_name: raw.businessProfile?.bankAccountName || '',
+    bank_account_number: raw.businessProfile?.bankAccountNumber || '',
+    payment_instructions: raw.businessProfile?.paymentInstructions || '',
   }
 
   const customers: Customer[] = (raw.customers || []).map((c: any) => ({
@@ -470,6 +481,14 @@ export function exportBackup(store: Store): string {
       email: store.settings.email,
       website: store.settings.website,
       notes: store.settings.default_notes,
+      paymentMethods: store.settings.payment_methods,
+      mobileMoneyProvider: store.settings.mobile_money_provider,
+      mobileMoneyNumber: store.settings.mobile_money_number,
+      mobileMoneyName: store.settings.mobile_money_name,
+      bankName: store.settings.bank_name,
+      bankAccountName: store.settings.bank_account_name,
+      bankAccountNumber: store.settings.bank_account_number,
+      paymentInstructions: store.settings.payment_instructions,
       defaultCurrency: 'UGX',
     },
     activeCurrency: 'UGX',
@@ -553,12 +572,23 @@ export async function loadStore(): Promise<Store> {
   const firstError = [customers, catalog, documents, payments, settings].find(x => x.error)?.error
   if (firstError) throw firstError
 
+  const localPaymentOptions = (() => {
+    try {
+      const saved = localStorage.getItem('nextone-payment-options')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })()
+
   const dbStore: Store = {
     customers: customers.data ?? [],
     catalog: catalog.data ?? [],
     documents: (documents.data ?? []).map((d: any) => ({ ...d, number: sanitizeSequence(d.number) })),
     payments: (payments.data ?? []).map((p: any) => ({ ...p, number: sanitizeSequence(p.number) })),
-    settings: settings.data ? { ...defaultSettings, ...settings.data } : initialBackupStore.settings,
+    settings: settings.data
+      ? { ...defaultSettings, ...localPaymentOptions, ...settings.data }
+      : { ...initialBackupStore.settings, ...localPaymentOptions },
   }
 
   // If database is completely empty for authenticated user, seed the official backup straight to database
@@ -640,8 +670,39 @@ export async function persistStore(store: Store, previous: Store) {
   }
 
   if (!same(store.settings, previous.settings)) {
+    const paymentBackup = {
+      payment_methods: store.settings.payment_methods,
+      mobile_money_provider: store.settings.mobile_money_provider,
+      mobile_money_number: store.settings.mobile_money_number,
+      mobile_money_name: store.settings.mobile_money_name,
+      bank_name: store.settings.bank_name,
+      bank_account_name: store.settings.bank_account_name,
+      bank_account_number: store.settings.bank_account_number,
+      payment_instructions: store.settings.payment_instructions,
+    }
+    try {
+      localStorage.setItem('nextone-payment-options', JSON.stringify(paymentBackup))
+    } catch {
+      // ignore storage errors
+    }
+
     const settingsResult = await client.from('company_settings').upsert({ ...store.settings, owner_id })
-    if (settingsResult.error) throw settingsResult.error
+    if (settingsResult.error) {
+      // If Supabase hasn't applied the payment_options migration yet, fall back to base columns cleanly
+      const baseSettings = {
+        name: store.settings.name,
+        tagline: store.settings.tagline,
+        address: store.settings.address,
+        phone: store.settings.phone,
+        email: store.settings.email,
+        website: store.settings.website,
+        logo_url: store.settings.logo_url,
+        default_notes: store.settings.default_notes,
+        owner_id,
+      }
+      const fallbackResult = await client.from('company_settings').upsert(baseSettings)
+      if (fallbackResult.error) throw fallbackResult.error
+    }
   }
 }
 

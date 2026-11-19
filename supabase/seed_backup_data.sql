@@ -92,19 +92,16 @@ begin
     category = excluded.category;
 
   -- 5. Clean up any existing conflicting documents and receipts for this owner
-  -- This prevents "ERROR: 23505: duplicate key value violates unique constraint"
-  -- when documents with numbers ORD-2026-0100, INV-2026-0100, INV-2026-0101 or receipts
-  -- RCT-2026-0100, RCT-2026-0101 already exist under different primary IDs.
   delete from public.payments
   where owner_id = current_owner
     and (
-      number in ('RCT-2026-0100', 'RCT-2026-0101')
+      number in ('RCT-2026-0100', 'RCT-2026-0101', 'RCT-2026-0102')
       or id in ('pay_1793015681871_wi1t', 'pay_1792668940744_l7nf')
       or document_id in (
         select id from public.sales_documents
         where owner_id = current_owner
           and (
-            number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101')
+            number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101', 'INV-2026-0102')
             or id in ('ord_1793456784863_6l5k', 'inv_1792671847743_c9os', 'inv_1792668875661_jioy')
           )
       )
@@ -113,7 +110,7 @@ begin
   delete from public.sales_documents
   where owner_id = current_owner
     and (
-      number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101')
+      number in ('ORD-2026-0100', 'INV-2026-0100', 'INV-2026-0101', 'INV-2026-0102')
       or id in ('ord_1793456784863_6l5k', 'inv_1792671847743_c9os', 'inv_1792668875661_jioy')
     );
 
@@ -129,7 +126,7 @@ begin
       'Mr. Timothy',
       '+256783282126',
       '',
-      '',
+      'Namasuba, Kampala',
       '[{"id":"item_1793456755966_vuto","catalog_id":"prod_1793449702945_qxjw","description":"Notebook","quantity":5,"unit":"pcs","unit_price":41000},{"id":"item_1793456755967_ab5w","catalog_id":"prod_1793447749319_zi3t","description":"Umbrellas","quantity":5,"unit":"pcs","unit_price":35000},{"id":"item_1793456755967_mafq","catalog_id":"prod_1","description":"Pull-up Banner","quantity":1,"unit":"pcs","unit_price":200000}]'::jsonb,
       0,
       'Delivery expected: 02/11/2026',
@@ -147,11 +144,11 @@ begin
       'Mr. Timothy',
       '+256783282126',
       '',
-      '',
+      'Namasuba, Kampala',
       '[{"id":"item-1792671604784-1","description":"General","quantity":1,"unit":"pcs","unit_price":123200}]'::jsonb,
       0,
       'Payment due upon receipt or within net agreed terms.',
-      'overdue',
+      'partial',
       '2026-10-10',
       '2026-10-31',
       '2026-10-22T12:24:07.744Z'
@@ -173,6 +170,24 @@ begin
       '2026-02-28',
       '2027-02-01',
       '2026-10-22T11:34:35.661Z'
+    ),
+    (
+      'doc-cd3147e6-054f-47f9-8623-...,',
+      current_owner,
+      'invoice',
+      'INV-2026-0102',
+      'cust_1792668744179_ouwc',
+      'Mr. Timothy',
+      '+256783282126',
+      '',
+      'Namasuba, Kampala',
+      '[{"id":"item-17939630001","description":"Notebook","quantity":6,"unit":"Book","unit_price":45400},{"id":"item-17939630002","description":"A4","quantity":3,"unit":"Page","unit_price":600}]'::jsonb,
+      0,
+      'We prioritize customer satisfaction. Our team is dedicated to delivering exceptional quality printing and branding solutions, ensuring complete satisfaction on every project.',
+      'partial',
+      '2026-11-06',
+      '2026-11-08',
+      '2026-11-06T00:00:00.000Z'
     );
 
   -- 7. Insert Payments
@@ -199,6 +214,17 @@ begin
       'Mobile Money',
       'Airtel',
       '2026-10-22T11:35:40.744Z'
+    ),
+    (
+      'payment-69ae4a0e-2122-4ac0-977f-2',
+      current_owner,
+      'doc-cd3147e6-054f-47f9-8623-...,',
+      'RCT-2026-0102',
+      '2026-11-06',
+      90000,
+      'Mobile Money',
+      '',
+      '2026-11-06T00:00:00.000Z'
     );
 
   raise notice 'NexTone backup data seeded successfully for owner %!', current_owner;

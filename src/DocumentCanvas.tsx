@@ -268,12 +268,34 @@ export function DocumentCanvas({
               <strong>PAYMENT INSTRUCTIONS & TERMS</strong>
             </div>
             <div className="instructions-grid">
-              <div><span>Mobile Money:</span> <strong>MTN / Airtel (+256 756 286 160)</strong></div>
-              <div><span>Recipient:</span> <strong>NexTone Printing & Branding</strong></div>
+              {(statement.settings.mobile_money_number || statement.settings.phone) && (
+                <div>
+                  <span>Mobile Money:</span>{' '}
+                  <strong>
+                    {statement.settings.mobile_money_provider || 'MTN / Airtel'} ({statement.settings.mobile_money_number || statement.settings.phone})
+                  </strong>
+                </div>
+              )}
+              <div>
+                <span>Recipient:</span>{' '}
+                <strong>{statement.settings.mobile_money_name || `${statement.settings.name} Printing & Branding`}</strong>
+              </div>
+              {statement.settings.bank_name && statement.settings.bank_account_number && (
+                <div>
+                  <span>Bank:</span>{' '}
+                  <strong>
+                    {statement.settings.bank_name} · {statement.settings.bank_account_number}
+                    {statement.settings.bank_account_name ? ` (${statement.settings.bank_account_name})` : ''}
+                  </strong>
+                </div>
+              )}
+              {statement.settings.payment_methods?.length > 0 && (
+                <div><span>Accepted:</span> <strong>{statement.settings.payment_methods.join(' · ')}</strong></div>
+              )}
               <div><span>Reference:</span> <strong>{statement.customer.name}</strong></div>
             </div>
             <div className="instructions-note">
-              <p>{defaultNotes}</p>
+              <p>{statement.settings.payment_instructions || defaultNotes}</p>
             </div>
           </div>
 
@@ -448,13 +470,35 @@ export function DocumentCanvas({
                 <strong>PAYMENT OPTIONS & NOTES</strong>
               </div>
               <div className="instructions-grid">
-                <div><span>Mobile Money:</span> <strong>MTN / Airtel (+256 756 286 160)</strong></div>
-                <div><span>Recipient:</span> <strong>NexTone Printing & Branding</strong></div>
+                {(settings.mobile_money_number || settings.phone) && (
+                  <div>
+                    <span>Mobile Money:</span>{' '}
+                    <strong>
+                      {settings.mobile_money_provider || 'MTN / Airtel'} ({settings.mobile_money_number || settings.phone})
+                    </strong>
+                  </div>
+                )}
+                <div>
+                  <span>Recipient:</span>{' '}
+                  <strong>{settings.mobile_money_name || `${settings.name} Printing & Branding`}</strong>
+                </div>
+                {settings.bank_name && settings.bank_account_number && (
+                  <div>
+                    <span>Bank:</span>{' '}
+                    <strong>
+                      {settings.bank_name} · {settings.bank_account_number}
+                      {settings.bank_account_name ? ` (${settings.bank_account_name})` : ''}
+                    </strong>
+                  </div>
+                )}
+                {settings.payment_methods?.length > 0 && (
+                  <div><span>Accepted:</span> <strong>{settings.payment_methods.join(' · ')}</strong></div>
+                )}
                 <div><span>Reference:</span> <strong>{document.number}</strong></div>
               </div>
               <div className="instructions-note">
                 <p>
-                  {notesText.replace(/#?(ORD|INV|RCT)-(\d{4})-(\d+)/gi, (match) => {
+                  {(document.notes || settings.payment_instructions || notesText).replace(/#?(ORD|INV|RCT)-(\d{4})-(\d+)/gi, (match) => {
                     const cleaned = formatDocumentNumber(match)
                     return cleaned || ''
                   }).trim()}

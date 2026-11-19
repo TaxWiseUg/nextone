@@ -275,7 +275,7 @@ export default function App() {
     {modal === 'document' && <DocumentEditor doc={activeDoc} store={store} close={() => { setModal(null); setActiveDoc(null) }} save={saveDocument} />}
     {modal === 'customer' && <CustomerEditor customer={editingCustomer} close={() => setModal(null)} save={saveCustomer} />}
     {modal === 'item' && <ItemEditor item={editingItem} close={() => setModal(null)} save={saveItem} />}
-    {modal === 'payment' && payDoc && <PaymentEditor document={payDoc} payments={store.payments} close={() => { setModal(null); setPayDoc(null) }} save={savePayment} />}
+    {modal === 'payment' && payDoc && <PaymentEditor document={payDoc} payments={store.payments} acceptedMethods={store.settings.payment_methods} close={() => { setModal(null); setPayDoc(null) }} save={savePayment} />}
     {modal === 'statement' && <StatementModal store={store} customerId={statementCustomer} close={() => setModal(null)} />}
     {notice && <div className={`toast ${notice.kind === 'error' ? 'error' : ''}`}><span>{notice.kind === 'error' ? <CircleAlert size={18}/> : <Check size={18}/>}</span>{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}
   </div>
@@ -650,11 +650,12 @@ function StatementsPage({ store, openStatement }: { store: Store; openStatement:
 function SettingsPage({ store, save, editing, setEditing, notice, syncStore, promptInstall, isInstalled }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean>; promptInstall: () => void; isInstalled: boolean }) {
   const [form, setForm] = useState(store.settings)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState<'methods' | 'provider' | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => setForm(store.settings), [store.settings])
-  const change = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }))
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!await save(form)) return; setEditing(false); notice('Company details updated.') }
+  const change = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm(current => ({ ...current, [key]: value }))
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!await save(form)) return; setEditing(false); notice('Company and payment settings updated.') }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -696,32 +697,125 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
     }
   }
 
+  const allPaymentMethods: { value: PaymentMethod; label: string; subtitle: string }[] = [
+    { value: 'Mobile Money', label: 'Mobile Money', subtitle: 'MTN MoMo & Airtel Money' },
+    { value: 'Bank transfer', label: 'Bank transfer', subtitle: 'Direct bank deposit or EFT' },
+    { value: 'Cash', label: 'Cash', subtitle: 'In-person cash settlement' },
+    { value: 'Card', label: 'Card', subtitle: 'Debit or credit card POS' },
+    { value: 'Other', label: 'Other', subtitle: 'Cheque or custom arrangement' },
+  ]
+  const providerOptions = [
+    { value: 'MTN / Airtel', label: 'MTN / Airtel', subtitle: 'Accepts both MTN MoMo and Airtel Money' },
+    { value: 'MTN Mobile Money', label: 'MTN Mobile Money', subtitle: 'MTN MoMo merchant or line only' },
+    { value: 'Airtel Money', label: 'Airtel Money', subtitle: 'Airtel Money merchant or line only' },
+    { value: 'Other', label: 'Other / Custom', subtitle: 'Custom mobile wallet provider' },
+  ]
+  const activeMethods = form.payment_methods?.length ? form.payment_methods : ['Mobile Money' as PaymentMethod]
+
   return <>
-    <PageHeading eyebrow="MAKE IT YOURS" title="Settings" subtitle="Your business details show up on quotations, invoices, receipts, and statements." action={editing ? <Button variant="secondary" onClick={() => { setForm(store.settings); setEditing(false) }}><X size={16}/> Cancel</Button> : <Button onClick={() => setEditing(true)}><Pencil size={16}/> Edit details</Button>}/>
+    <PageHeading eyebrow="MAKE IT YOURS" title="Settings" subtitle="Your business details and payment options show up on quotations, invoices, receipts, and statements." action={editing ? <Button variant="secondary" onClick={() => { setForm(store.settings); setEditing(false) }}><X size={16}/> Cancel</Button> : <Button onClick={() => setEditing(true)}><Pencil size={16}/> Edit details</Button>}/>
     <form className="settings-layout" onSubmit={submit}>
-      <section className="panel settings-card">
-        <div className="settings-card-head">
-          <span className="round-mini teal"><BriefcaseBusiness size={17}/></span>
-          <div>
-            <strong>Business identity</strong>
-            <small>The public face of your brand on every document.</small>
+      <div className="settings-stack">
+        <section className="panel settings-card">
+          <div className="settings-card-head">
+            <span className="round-mini teal"><BriefcaseBusiness size={17}/></span>
+            <div>
+              <strong>Business identity</strong>
+              <small>The public face of your brand on every document.</small>
+            </div>
           </div>
-        </div>
-        <div className="settings-fields">
-          <Field label="Company name" value={form.name} disabled={!editing} onChange={value => change('name', value)} required/>
-          <Field label="Tagline" value={form.tagline} disabled={!editing} onChange={value => change('tagline', value)}/>
-          <Field label="Phone number" value={form.phone} disabled={!editing} onChange={value => change('phone', value)} icon={Phone}/>
-          <Field label="Email address" value={form.email} disabled={!editing} onChange={value => change('email', value)} icon={Mail} type="email"/>
-          <Field label="Website" value={form.website} disabled={!editing} onChange={value => change('website', value)} icon={Globe2}/>
-          <Field label="Business address" value={form.address} disabled={!editing} onChange={value => change('address', value)} wide/>
-          <Field label="Logo image URL" value={form.logo_url} disabled={!editing} onChange={value => change('logo_url', value)} wide hint="Paste a public image URL to show your logo on documents."/>
-          <Field label="Default document note" value={form.default_notes} disabled={!editing} onChange={value => change('default_notes', value)} wide textarea/>
-        </div>
-        {editing && <div className="settings-footer">
-          <span><ShieldCheck size={15}/> Only your owner account can manage these settings.</span>
-          <Button type="submit"><Check size={16}/> Save changes</Button>
-        </div>}
-      </section>
+          <div className="settings-fields">
+            <Field label="Company name" value={form.name} disabled={!editing} onChange={value => change('name', value)} required/>
+            <Field label="Tagline" value={form.tagline} disabled={!editing} onChange={value => change('tagline', value)}/>
+            <Field label="Phone number" value={form.phone} disabled={!editing} onChange={value => change('phone', value)} icon={Phone}/>
+            <Field label="Email address" value={form.email} disabled={!editing} onChange={value => change('email', value)} icon={Mail} type="email"/>
+            <Field label="Website" value={form.website} disabled={!editing} onChange={value => change('website', value)} icon={Globe2}/>
+            <Field label="Business address" value={form.address} disabled={!editing} onChange={value => change('address', value)} wide/>
+            <Field label="Logo image URL" value={form.logo_url} disabled={!editing} onChange={value => change('logo_url', value)} wide hint="Paste a public image URL to show your logo on documents."/>
+            <Field label="Default document note" value={form.default_notes} disabled={!editing} onChange={value => change('default_notes', value)} wide textarea/>
+          </div>
+        </section>
+
+        <section className="panel settings-card">
+          <div className="settings-card-head" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="round-mini blue"><WalletCards size={17}/></span>
+              <div>
+                <strong>Payment options</strong>
+                <small>Configure Mobile Money, bank transfer details, and accepted channels shown on invoices & statements.</small>
+              </div>
+            </div>
+            {!editing && (
+              <Button type="button" variant="secondary" onClick={() => setEditing(true)}>
+                <Pencil size={14}/> Configure
+              </Button>
+            )}
+          </div>
+
+          <div className="settings-fields">
+            <div className="field wide">
+              <span>Accepted payment channels</span>
+              <button
+                type="button"
+                className="select-trigger"
+                disabled={!editing}
+                onClick={() => setSheetOpen('methods')}
+              >
+                <span className="select-trigger-value">
+                  <strong>{activeMethods.join(', ')}</strong>
+                </span>
+                <ChevronDown size={15}/>
+              </button>
+              <div className="method-chips-preview">
+                {activeMethods.map(m => (
+                  <span className="method-chip" key={m}><Check size={11}/> {m}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-subsection">
+              <div>
+                <strong>Mobile Money</strong>
+                <small>Shown in the Payment Instructions card on exported PDFs and PNGs.</small>
+              </div>
+            </div>
+
+            <div className="field">
+              <span>Mobile Money network</span>
+              <button
+                type="button"
+                className="select-trigger"
+                disabled={!editing}
+                onClick={() => setSheetOpen('provider')}
+              >
+                <span className="select-trigger-value">
+                  <strong>{form.mobile_money_provider || 'MTN / Airtel'}</strong>
+                </span>
+                <ChevronDown size={15}/>
+              </button>
+            </div>
+            <Field label="Mobile Money number" value={form.mobile_money_number || ''} disabled={!editing} onChange={value => change('mobile_money_number', value)} placeholder="+256 756 286 160" icon={Phone}/>
+            <Field label="Recipient / registered name" value={form.mobile_money_name || ''} disabled={!editing} onChange={value => change('mobile_money_name', value)} placeholder="NexTone Printing & Branding" wide/>
+
+            <div className="settings-subsection">
+              <div>
+                <strong>Bank transfer (optional)</strong>
+                <small>Leave blank to hide bank details from client documents.</small>
+              </div>
+            </div>
+
+            <Field label="Bank name" value={form.bank_name || ''} disabled={!editing} onChange={value => change('bank_name', value)} placeholder="e.g. Stanbic Bank Uganda"/>
+            <Field label="Account number" value={form.bank_account_number || ''} disabled={!editing} onChange={value => change('bank_account_number', value)} placeholder="e.g. 9030012345678"/>
+            <Field label="Account name" value={form.bank_account_name || ''} disabled={!editing} onChange={value => change('bank_account_name', value)} placeholder="e.g. NexTone Ltd" wide/>
+            <Field label="Payment instructions note" value={form.payment_instructions || ''} disabled={!editing} onChange={value => change('payment_instructions', value)} placeholder="Optional payment terms or confirmation instructions…" wide textarea/>
+          </div>
+
+          {editing && <div className="settings-footer">
+            <span><ShieldCheck size={15}/> Only your owner account can manage these settings.</span>
+            <Button type="submit"><Check size={16}/> Save changes</Button>
+          </div>}
+        </section>
+      </div>
 
       <aside className="panel preview-card">
         <div className="preview-kicker">DOCUMENT PREVIEW</div>
@@ -736,12 +830,40 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
           <div className="preview-date">06/11/2026</div>
           <div className="preview-rule"/>
           <strong className="preview-title">Made with care,<br/>just for you.</strong>
-          <p>{form.default_notes}</p>
+          <p>{form.payment_instructions || form.default_notes}</p>
+          <div className="preview-payment-box">
+            <strong>PAYMENT OPTIONS</strong>
+            <span>{form.mobile_money_provider || 'MTN / Airtel'}: {form.mobile_money_number || form.phone || '+256 756 286 160'}</span>
+            <span>Recipient: {form.mobile_money_name || form.name || 'NexTone'}</span>
+            {form.bank_name && form.bank_account_number && <span>Bank: {form.bank_name} · {form.bank_account_number}</span>}
+          </div>
           <div className="preview-footer">{form.website || 'nextone.ug'} <span>·</span> {form.phone || '+256 756 286 160'}</div>
         </div>
-        <p className="preview-help">Your company details and notes appear at the bottom of every NexTone document.</p>
+        <p className="preview-help">Your company identity and payment options appear on every exported document.</p>
       </aside>
     </form>
+
+    {sheetOpen === 'methods' && (
+      <BottomMultiSelectSheet
+        title="Accepted payment channels"
+        subtitle="Select the payment options customers can use to settle invoices."
+        options={allPaymentMethods}
+        selected={activeMethods}
+        onChange={next => change('payment_methods', next as PaymentMethod[])}
+        close={() => setSheetOpen(null)}
+      />
+    )}
+
+    {sheetOpen === 'provider' && (
+      <BottomSelectSheet
+        title="Mobile Money network"
+        subtitle="Choose which Mobile Money provider appears on invoices & statements."
+        options={providerOptions}
+        value={form.mobile_money_provider || 'MTN / Airtel'}
+        onSelect={value => { change('mobile_money_provider', value); setSheetOpen(null) }}
+        close={() => setSheetOpen(null)}
+      />
+    )}
 
     <section className="panel database-card" style={{ marginTop: '20px', padding: '24px' }}>
       <div className="settings-card-head" style={{ marginBottom: '18px' }}>
@@ -843,10 +965,184 @@ function CustomerEditor({ customer, close, save }: { customer: Customer|null; cl
   const submit = (event: React.FormEvent) => { event.preventDefault(); save({ ...form, id: customer?.id || makeId('customer'), created_at: customer?.created_at || new Date().toISOString() }) }
   return <Dialog title={customer ? 'Edit customer' : 'Add a customer'} subtitle="A little detail goes a long way." close={close}><form onSubmit={submit} className="dialog-form"><Field label="Customer name" value={form.name} onChange={name => setForm({ ...form, name })} placeholder="e.g. Acacia Studio" required/><div className="form-row"><Field label="Phone number" value={form.phone} onChange={phone => setForm({ ...form, phone })} placeholder="+256 700 000 000"/><Field label="Email address" value={form.email} onChange={email => setForm({ ...form, email })} placeholder="hello@example.com" type="email"/></div><Field label="Address" value={form.address} onChange={address => setForm({ ...form, address })} placeholder="Area, city, country"/><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit"><Check size={16}/> Save customer</Button></div></form></Dialog>
 }
+type SheetOption = {
+  value: string
+  label: string
+  subtitle?: string
+  badge?: string
+}
+
+function BottomSelectSheet({
+  title,
+  subtitle,
+  options,
+  value,
+  searchable = false,
+  searchPlaceholder = 'Search options…',
+  emptyText = 'No options match your search.',
+  onSelect,
+  close,
+}: {
+  title: string
+  subtitle?: string
+  options: SheetOption[]
+  value: string
+  searchable?: boolean
+  searchPlaceholder?: string
+  emptyText?: string
+  onSelect: (value: string) => void
+  close: () => void
+}) {
+  const [filter, setFilter] = useState('')
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [close])
+
+  const filtered = filter.trim()
+    ? options.filter(opt => `${opt.label} ${opt.subtitle || ''} ${opt.badge || ''}`.toLowerCase().includes(filter.toLowerCase()))
+    : options
+
+  return (
+    <div className="bottom-sheet-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close() }}>
+      <div className="bottom-sheet" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="bottom-sheet-handle" />
+        <div className="bottom-sheet-head">
+          <div>
+            <h3>{title}</h3>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <button type="button" className="icon-button" onClick={close} aria-label="Close options">
+            <X size={18} />
+          </button>
+        </div>
+        {(searchable || options.length > 5) && (
+          <div className="bottom-sheet-search">
+            <SearchBox value={filter} onChange={setFilter} placeholder={searchPlaceholder} />
+          </div>
+        )}
+        <div className="bottom-sheet-list">
+          {filtered.length ? filtered.map(opt => {
+            const active = opt.value === value
+            return (
+              <button
+                type="button"
+                key={opt.value}
+                className={`bottom-sheet-card ${active ? 'selected' : ''}`}
+                onClick={() => onSelect(opt.value)}
+              >
+                <div className="bottom-sheet-card-main">
+                  <span className="bottom-sheet-card-title">{opt.label}</span>
+                  {opt.subtitle && <span className="bottom-sheet-card-sub">{opt.subtitle}</span>}
+                </div>
+                <div className="bottom-sheet-card-side">
+                  {opt.badge && <span className="bottom-sheet-card-badge">{opt.badge}</span>}
+                  <span className="bottom-sheet-check">
+                    <Check size={13} />
+                  </span>
+                </div>
+              </button>
+            )
+          }) : (
+            <div className="bottom-sheet-empty">{emptyText}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BottomMultiSelectSheet({
+  title,
+  subtitle,
+  options,
+  selected,
+  onChange,
+  close,
+}: {
+  title: string
+  subtitle?: string
+  options: SheetOption[]
+  selected: string[]
+  onChange: (next: string[]) => void
+  close: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [close])
+
+  const toggle = (val: string) => {
+    const exists = selected.includes(val)
+    if (exists && selected.length === 1) return
+    onChange(exists ? selected.filter(item => item !== val) : [...selected, val])
+  }
+
+  return (
+    <div className="bottom-sheet-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close() }}>
+      <div className="bottom-sheet" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="bottom-sheet-handle" />
+        <div className="bottom-sheet-head">
+          <div>
+            <h3>{title}</h3>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <button type="button" className="icon-button" onClick={close} aria-label="Close options">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="bottom-sheet-list">
+          {options.map(opt => {
+            const active = selected.includes(opt.value)
+            return (
+              <button
+                type="button"
+                key={opt.value}
+                className={`bottom-sheet-card ${active ? 'selected' : ''}`}
+                onClick={() => toggle(opt.value)}
+              >
+                <div className="bottom-sheet-card-main">
+                  <span className="bottom-sheet-card-title">{opt.label}</span>
+                  {opt.subtitle && <span className="bottom-sheet-card-sub">{opt.subtitle}</span>}
+                </div>
+                <div className="bottom-sheet-card-side">
+                  <span className="bottom-sheet-check">
+                    <Check size={13} />
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div className="bottom-sheet-footer">
+          <Button type="button" onClick={close}><Check size={15}/> Done</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ItemEditor({ item, close, save }: { item: CatalogItem|null; close: () => void; save: (item: CatalogItem) => void }) {
-  const [form, setForm] = useState({ name: item?.name || '', description: item?.description || '', category: item?.category || 'Printing', unit: item?.unit || 'piece', price: String(item?.price || '') })
+  const [form, setForm] = useState({ name: item?.name || '', description: item?.description || '', category: item?.category || 'Paper Printing', unit: item?.unit || 'piece', price: String(item?.price || '') })
+  const [pickingCategory, setPickingCategory] = useState(false)
+  const categoryList = [
+    'Paper Printing',
+    'Promotional Items',
+    'Banners & Signage',
+    'Apparels & Merchandise',
+    'Large Format Printing',
+    'Corporate ID',
+    'Printing',
+    'Branding',
+    'Design',
+    'Other',
+  ]
+  const uniqueCategories = Array.from(new Set([...categoryList, ...(form.category ? [form.category] : [])]))
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (Number(form.price) < 0) return; save({ ...form, id: item?.id || makeId('item'), price: Number(form.price), created_at: item?.created_at || new Date().toISOString() }) }
-  return <Dialog title={item ? 'Edit catalog item' : 'Add to your catalog'} subtitle="Save a price for the next time you need it." close={close}><form onSubmit={submit} className="dialog-form"><Field label="Item name" value={form.name} onChange={name => setForm({ ...form, name })} placeholder="e.g. Business cards" required/><Field label="Short description" value={form.description} onChange={description => setForm({ ...form, description })} placeholder="Size, finish, or other useful detail"/><div className="form-row"><label className="field"><span>Category</span><select value={form.category} onChange={event => setForm({ ...form, category: event.target.value })}><option>Printing</option><option>Branding</option><option>Design</option><option>Other</option></select></label><Field label="Unit" value={form.unit} onChange={unit => setForm({ ...form, unit })} placeholder="piece, pack, sheet" required/></div><div className="form-row"><Field label="Price (UGX)" value={form.price} onChange={price => setForm({ ...form, price })} type="number" required/><div className="field"><span>Preview</span><div className="price-preview">{money(Number(form.price) || 0)} <small>per {form.unit || 'unit'}</small></div></div></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit"><Check size={16}/> Save item</Button></div></form></Dialog>
+  return <Dialog title={item ? 'Edit catalog item' : 'Add to your catalog'} subtitle="Save a price for the next time you need it." close={close}><form onSubmit={submit} className="dialog-form"><Field label="Item name" value={form.name} onChange={name => setForm({ ...form, name })} placeholder="e.g. Business cards" required/><Field label="Short description" value={form.description} onChange={description => setForm({ ...form, description })} placeholder="Size, finish, or other useful detail"/><div className="form-row"><div className="field"><span>Category</span><button type="button" className="select-trigger" onClick={() => setPickingCategory(true)}><span className="select-trigger-value"><strong>{form.category}</strong></span><ChevronDown size={15}/></button></div><Field label="Unit" value={form.unit} onChange={unit => setForm({ ...form, unit })} placeholder="piece, pack, sheet" required/></div><div className="form-row"><Field label="Price (UGX)" value={form.price} onChange={price => setForm({ ...form, price })} type="number" required/><div className="field"><span>Preview</span><div className="price-preview">{money(Number(form.price) || 0)} <small>per {form.unit || 'unit'}</small></div></div></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit"><Check size={16}/> Save item</Button></div></form>{pickingCategory && <BottomSelectSheet title="Select category" subtitle="Group this item in your catalog." options={uniqueCategories.map(cat => ({ value: cat, label: cat }))} value={form.category} searchable searchPlaceholder="Search categories…" onSelect={category => { setForm({ ...form, category }); setPickingCategory(false) }} close={() => setPickingCategory(false)} />}</Dialog>
 }
 
 function DocumentEditor({ doc, store, close, save }: { doc: SalesDocument|null; store: Store; close: () => void; save: (doc: Omit<SalesDocument, 'id'|'number'|'created_at'> & Partial<Pick<SalesDocument, 'id'|'number'|'created_at'>>) => void }) {
@@ -859,6 +1155,8 @@ function DocumentEditor({ doc, store, close, save }: { doc: SalesDocument|null; 
   const [notes, setNotes] = useState(doc?.notes || store.settings.default_notes)
   const [issueDate, setIssueDate] = useState(doc?.issue_date || today())
   const [dueDate, setDueDate] = useState(doc?.due_date || today())
+  const [pickingCustomer, setPickingCustomer] = useState(false)
+  const [pickingCatalogLine, setPickingCatalogLine] = useState<LineItem | null>(null)
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
   const total = subtotal * (1 - Math.min(100, Math.max(0, Number(discount) || 0)) / 100)
   const chooseCustomer = (id: string) => { setCustomerId(id); setCustomer(store.customers.find(c => c.id === id)) }
@@ -872,24 +1170,34 @@ function DocumentEditor({ doc, store, close, save }: { doc: SalesDocument|null; 
   const pickCatalog = (id: string, line: LineItem) => { const product = store.catalog.find(item => item.id === id); if (product) updateLine(line.id, { catalog_id: product.id, description: product.name, unit: product.unit, unit_price: product.price }) }
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!customer) return; const valid = items.filter(item => item.description.trim() && item.quantity > 0 && item.unit_price >= 0); if (!valid.length) return; save({ id: doc?.id, number: doc?.number, created_at: doc?.created_at, type, customer_id: customer.id, customer_name: customer.name, customer_phone: customer.phone, customer_email: customer.email, customer_address: customer.address, items: valid, discount_percent: Number(discount) || 0, notes, status: doc?.status || (type === 'invoice' ? 'unpaid' : 'draft'), issue_date: issueDate, due_date: dueDate, source_quote: doc?.source_quote }) }
   return <Dialog title={editing ? `Edit ${type}` : `New ${type}`} subtitle={editing ? `Update ${doc?.number} details.` : 'Put together something great for your customer.'} close={close} wide><form onSubmit={submit} className="document-form"><div className="document-type-toggle"><button type="button" className={type === 'quotation' ? 'active' : ''} onClick={() => !editing && setType('quotation')}><FileText size={16}/> Quotation</button><button type="button" className={type === 'invoice' ? 'active' : ''} onClick={() => !editing && setType('invoice')}><ReceiptText size={16}/> Invoice</button></div>
-    <div className="form-row doc-meta-row"><label className="field"><span>Customer</span><select required value={customerId} onChange={event => chooseCustomer(event.target.value)}><option value="">Select a customer…</option>{store.customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field label="Issue date" value={issueDate} onChange={setIssueDate} type="date" required/><Field label={type === 'invoice' ? 'Due date' : 'Valid until'} value={dueDate} onChange={setDueDate} type="date" required/></div>
+    <div className="form-row doc-meta-row"><div className="field"><span>Customer</span><button type="button" className="select-trigger" onClick={() => setPickingCustomer(true)} disabled={!store.customers.length}><span className="select-trigger-value">{customer ? <strong>{customer.name}</strong> : <span className="placeholder">Select a customer…</span>}</span><ChevronDown size={15}/></button></div><Field label="Issue date" value={issueDate} onChange={setIssueDate} type="date" required/><Field label={type === 'invoice' ? 'Due date' : 'Valid until'} value={dueDate} onChange={setDueDate} type="date" required/></div>
     {!store.customers.length && <div className="inline-help"><CircleAlert size={15}/> Add a customer in Customers before creating this document.</div>}
     <div className="line-items-heading"><div><strong>Items & services</strong><small>Prices are saved on this document for your records.</small></div><span>LINE TOTAL</span></div>
-    <div className="editor-lines">{items.map((line, index) => <div className="editor-line" key={line.id}><span className="line-index">{String(index + 1).padStart(2, '0')}</span><label className="field item-picker"><span>Description</span><div className="item-picker-inner"><input value={line.description} onChange={event => changeLineDescription(line, event.target.value)} placeholder="Describe an item or service" list={`catalog-${line.id}`}/><datalist id={`catalog-${line.id}`}>{store.catalog.map(product => <option key={product.id} value={product.name}/>)}</datalist>{store.catalog.length > 0 && <select aria-label="Use saved catalog item" value="" onChange={event => pickCatalog(event.target.value, line)}><option value="">Use saved</option>{store.catalog.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select>}</div></label><Field label="Qty" value={line.quantity} onChange={value => updateLine(line.id, { quantity: Number(value) })} type="number"/><Field label="Unit" value={line.unit} onChange={unit => updateLine(line.id, { unit })}/><Field label="Unit price" value={line.unit_price} onChange={value => updateLine(line.id, { unit_price: Number(value) })} type="number"/><div className="line-total">{money(line.quantity * line.unit_price)}</div><button type="button" className="line-remove" aria-label="Remove line" disabled={items.length === 1} onClick={() => setItems(items.filter(x => x.id !== line.id))}><X size={15}/></button></div>)}</div>
+    <div className="editor-lines">{items.map((line, index) => <div className="editor-line" key={line.id}><span className="line-index">{String(index + 1).padStart(2, '0')}</span><label className="field item-picker"><span>Description</span><div className="item-picker-inner"><input value={line.description} onChange={event => changeLineDescription(line, event.target.value)} placeholder="Describe an item or service" list={`catalog-${line.id}`}/><datalist id={`catalog-${line.id}`}>{store.catalog.map(product => <option key={product.id} value={product.name}/>)}</datalist>{store.catalog.length > 0 && <button type="button" className="select-trigger select-trigger-inline" aria-label="Use saved catalog item" onClick={() => setPickingCatalogLine(line)}><Package size={13}/> <span>Use saved</span> <ChevronDown size={14}/></button>}</div></label><Field label="Qty" value={line.quantity} onChange={value => updateLine(line.id, { quantity: Number(value) })} type="number"/><Field label="Unit" value={line.unit} onChange={unit => updateLine(line.id, { unit })}/><Field label="Unit price" value={line.unit_price} onChange={value => updateLine(line.id, { unit_price: Number(value) })} type="number"/><div className="line-total">{money(line.quantity * line.unit_price)}</div><button type="button" className="line-remove" aria-label="Remove line" disabled={items.length === 1} onClick={() => setItems(items.filter(x => x.id !== line.id))}><X size={15}/></button></div>)}</div>
     <button type="button" className="add-line" onClick={() => setItems([...items, { id: makeId('line'), description: '', quantity: 1, unit: 'piece', unit_price: 0 }])}><Plus size={15}/> Add another item</button>
     <div className="document-bottom-fields"><label className="field notes-field"><span>Note to customer</span><textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="A thoughtful note makes it personal…"/></label><div className="totals-editor"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><label><span>Discount</span><span className="discount-input"><input type="number" min="0" max="100" step="0.5" value={discount} onChange={event => setDiscount(event.target.value)}/>%</span></label><div className="total-line"><span>Grand total</span><strong>{money(total)}</strong></div></div></div>
     <div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!customer || !items.some(i => i.description.trim())}><Check size={16}/>{editing ? 'Save changes' : `Create ${type}`}</Button></div>
-  </form></Dialog>
+  </form>
+  {pickingCustomer && <BottomSelectSheet title="Select customer" subtitle="Choose who this document is prepared for." options={store.customers.map(c => ({ value: c.id, label: c.name, subtitle: [c.phone, c.address].filter(Boolean).join(' · ') || 'No contact details' }))} value={customerId} searchable searchPlaceholder="Search customers by name or phone…" emptyText="No matching customers." onSelect={id => { chooseCustomer(id); setPickingCustomer(false) }} close={() => setPickingCustomer(false)} />}
+  {pickingCatalogLine && <BottomSelectSheet title="Select catalog item" subtitle="Tap an item to fill description, unit, and saved UGX price." options={store.catalog.map(product => ({ value: product.id, label: product.name, subtitle: [product.category, product.description].filter(Boolean).join(' · ') || `Per ${product.unit}`, badge: `${money(product.price)} / ${product.unit}` }))} value={pickingCatalogLine.catalog_id || ''} searchable searchPlaceholder="Search catalog items…" emptyText="No matching catalog items." onSelect={id => { pickCatalog(id, pickingCatalogLine); setPickingCatalogLine(null) }} close={() => setPickingCatalogLine(null)} />}
+  </Dialog>
 }
 
-function PaymentEditor({ document, payments, close, save }: { document: SalesDocument; payments: Payment[]; close: () => void; save: (payment: Omit<Payment, 'id'|'number'|'created_at'>) => void }) {
+function PaymentEditor({ document, payments, acceptedMethods, close, save }: { document: SalesDocument; payments: Payment[]; acceptedMethods?: PaymentMethod[]; close: () => void; save: (payment: Omit<Payment, 'id'|'number'|'created_at'>) => void }) {
   const remaining = Math.max(0, docTotal(document) - paidFor(payments, document.id))
+  const defaultMethod = acceptedMethods?.length ? acceptedMethods[0] : 'Mobile Money'
   const [amount, setAmount] = useState(String(remaining))
-  const [method, setMethod] = useState<PaymentMethod>('Mobile Money')
+  const [method, setMethod] = useState<PaymentMethod>(defaultMethod)
   const [paidAt, setPaidAt] = useState(today())
   const [reference, setReference] = useState('')
+  const [pickingMethod, setPickingMethod] = useState(false)
+  const methodOptions: SheetOption[] = (['Mobile Money', 'Cash', 'Bank transfer', 'Card', 'Other'] as PaymentMethod[]).map(m => ({
+    value: m,
+    label: m,
+    subtitle: acceptedMethods?.includes(m) ? 'Enabled in Settings' : 'Additional channel',
+  }))
   const submit = (event: React.FormEvent) => { event.preventDefault(); const numeric = Number(amount); if (numeric <= 0 || numeric > remaining) return; save({ document_id: document.id, paid_at: paidAt, amount: numeric, method, reference }) }
-  return <Dialog title="Record a payment" subtitle="A receipt will be created for this payment." close={close}><form className="dialog-form" onSubmit={submit}><div className="payment-context"><span className="round-mini teal"><ReceiptText size={17}/></span><div><strong>{document.number} · {document.customer_name}</strong><small>{money(remaining)} remaining on this invoice</small></div></div><Field label="Amount received (UGX)" value={amount} onChange={setAmount} type="number" required/><div className="form-row"><Field label="Payment date" value={paidAt} onChange={setPaidAt} type="date" required/><label className="field"><span>Payment method</span><select value={method} onChange={event => setMethod(event.target.value as PaymentMethod)}>{['Cash', 'Mobile Money', 'Bank transfer', 'Card', 'Other'].map(x => <option key={x}>{x}</option>)}</select></label></div><Field label="Reference (optional)" value={reference} onChange={setReference} placeholder="Transaction ID or short note"/><div className="payment-remainder"><span>Balance after payment</span><strong>{money(Math.max(0, remaining - (Number(amount) || 0)))}</strong></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!Number(amount) || Number(amount) > remaining}><ReceiptText size={16}/> Record payment</Button></div></form></Dialog>
+  return <Dialog title="Record a payment" subtitle="A receipt will be created for this payment." close={close}><form className="dialog-form" onSubmit={submit}><div className="payment-context"><span className="round-mini teal"><ReceiptText size={17}/></span><div><strong>{document.number} · {document.customer_name}</strong><small>{money(remaining)} remaining on this invoice</small></div></div><Field label="Amount received (UGX)" value={amount} onChange={setAmount} type="number" required/><div className="form-row"><Field label="Payment date" value={paidAt} onChange={setPaidAt} type="date" required/><div className="field"><span>Payment method</span><button type="button" className="select-trigger" onClick={() => setPickingMethod(true)}><span className="select-trigger-value"><strong>{method}</strong></span><ChevronDown size={15}/></button></div></div><Field label="Reference (optional)" value={reference} onChange={setReference} placeholder="Transaction ID or short note"/><div className="payment-remainder"><span>Balance after payment</span><strong>{money(Math.max(0, remaining - (Number(amount) || 0)))}</strong></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!Number(amount) || Number(amount) > remaining}><ReceiptText size={16}/> Record payment</Button></div></form>{pickingMethod && <BottomSelectSheet title="Select payment method" subtitle="Choose how the customer settled this payment." options={methodOptions} value={method} onSelect={val => { setMethod(val as PaymentMethod); setPickingMethod(false) }} close={() => setPickingMethod(false)} />}</Dialog>
 }
 
 function DocumentDetail({ document, store, close, edit, duplicate, convert, addPayment, onDelete }: { document: SalesDocument; store: Store; close: () => void; edit: () => void; duplicate: () => void; convert: () => void; addPayment: () => void; onDelete: () => void }) {

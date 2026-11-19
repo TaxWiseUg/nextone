@@ -1,11 +1,13 @@
 // NexTone PWA Service Worker
-const CACHE_NAME = 'nextone-cache-v1'
+const CACHE_NAME = 'nextone-cache-v2'
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/pwa-icon.jpg',
-  '/apple-touch-icon.jpg'
+  '/pwa-192x192.png',
+  '/pwa-512x512.png',
+  '/pwa-maskable-512x512.png',
+  '/apple-touch-icon.png'
 ]
 
 self.addEventListener('install', (event) => {
