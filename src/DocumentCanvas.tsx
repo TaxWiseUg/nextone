@@ -280,6 +280,15 @@ export function DocumentCanvas({
                 <span>Recipient:</span>{' '}
                 <strong>{statement.settings.mobile_money_name || `${statement.settings.name} Printing & Branding`}</strong>
               </div>
+              {statement.settings.airtel_pay_code && (
+                <div>
+                  <span>Airtel Pay:</span>{' '}
+                  <strong>
+                    Code {statement.settings.airtel_pay_code}
+                    {statement.settings.airtel_pay_name ? ` (${statement.settings.airtel_pay_name})` : ''}
+                  </strong>
+                </div>
+              )}
               {statement.settings.bank_name && statement.settings.bank_account_number && (
                 <div>
                   <span>Bank:</span>{' '}
@@ -482,6 +491,15 @@ export function DocumentCanvas({
                   <span>Recipient:</span>{' '}
                   <strong>{settings.mobile_money_name || `${settings.name} Printing & Branding`}</strong>
                 </div>
+                {settings.airtel_pay_code && (
+                  <div>
+                    <span>Airtel Pay:</span>{' '}
+                    <strong>
+                      Code {settings.airtel_pay_code}
+                      {settings.airtel_pay_name ? ` (${settings.airtel_pay_name})` : ''}
+                    </strong>
+                  </div>
+                )}
                 {settings.bank_name && settings.bank_account_number && (
                   <div>
                     <span>Bank:</span>{' '}

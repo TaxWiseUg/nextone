@@ -351,6 +351,8 @@ export function parseBackupJson(raw: any): Store {
     mobile_money_provider: raw.businessProfile?.mobileMoneyProvider || defaultSettings.mobile_money_provider,
     mobile_money_number: raw.businessProfile?.mobileMoneyNumber || raw.businessProfile?.phone || defaultSettings.mobile_money_number,
     mobile_money_name: raw.businessProfile?.mobileMoneyName || defaultSettings.mobile_money_name,
+    airtel_pay_code: raw.businessProfile?.airtelPayCode || '',
+    airtel_pay_name: raw.businessProfile?.airtelPayName || '',
     bank_name: raw.businessProfile?.bankName || '',
     bank_account_name: raw.businessProfile?.bankAccountName || '',
     bank_account_number: raw.businessProfile?.bankAccountNumber || '',
@@ -442,6 +444,7 @@ export function parseBackupJson(raw: any): Store {
   const payments: Payment[] = (raw.payments || []).map((p: any) => {
     let method = 'Mobile Money'
     if (p.paymentMethod === 'cash') method = 'Cash'
+    else if (p.paymentMethod === 'airtel_pay') method = 'Airtel Pay'
     else if (p.paymentMethod === 'bank_transfer') method = 'Bank transfer'
     else if (p.paymentMethod === 'card') method = 'Card'
     else if (p.method) method = p.method
@@ -485,6 +488,8 @@ export function exportBackup(store: Store): string {
       mobileMoneyProvider: store.settings.mobile_money_provider,
       mobileMoneyNumber: store.settings.mobile_money_number,
       mobileMoneyName: store.settings.mobile_money_name,
+      airtelPayCode: store.settings.airtel_pay_code,
+      airtelPayName: store.settings.airtel_pay_name,
       bankName: store.settings.bank_name,
       bankAccountName: store.settings.bank_account_name,
       bankAccountNumber: store.settings.bank_account_number,
@@ -675,6 +680,8 @@ export async function persistStore(store: Store, previous: Store) {
       mobile_money_provider: store.settings.mobile_money_provider,
       mobile_money_number: store.settings.mobile_money_number,
       mobile_money_name: store.settings.mobile_money_name,
+      airtel_pay_code: store.settings.airtel_pay_code,
+      airtel_pay_name: store.settings.airtel_pay_name,
       bank_name: store.settings.bank_name,
       bank_account_name: store.settings.bank_account_name,
       bank_account_number: store.settings.bank_account_number,

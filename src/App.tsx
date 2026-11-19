@@ -699,6 +699,7 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
 
   const allPaymentMethods: { value: PaymentMethod; label: string; subtitle: string }[] = [
     { value: 'Mobile Money', label: 'Mobile Money', subtitle: 'MTN MoMo & Airtel Money' },
+    { value: 'Airtel Pay', label: 'Airtel Pay', subtitle: 'Airtel Pay merchant code (*185*9#)' },
     { value: 'Bank transfer', label: 'Bank transfer', subtitle: 'Direct bank deposit or EFT' },
     { value: 'Cash', label: 'Cash', subtitle: 'In-person cash settlement' },
     { value: 'Card', label: 'Card', subtitle: 'Debit or credit card POS' },
@@ -799,6 +800,16 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
 
             <div className="settings-subsection">
               <div>
+                <strong>Airtel Pay (optional)</strong>
+                <small>Merchant code for customers paying via Airtel Pay (*185*9#).</small>
+              </div>
+            </div>
+
+            <Field label="Airtel Pay merchant code" value={form.airtel_pay_code || ''} disabled={!editing} onChange={value => change('airtel_pay_code', value)} placeholder="e.g. 1234567"/>
+            <Field label="Airtel Pay merchant name" value={form.airtel_pay_name || ''} disabled={!editing} onChange={value => change('airtel_pay_name', value)} placeholder="e.g. NexTone Printing"/>
+
+            <div className="settings-subsection">
+              <div>
                 <strong>Bank transfer (optional)</strong>
                 <small>Leave blank to hide bank details from client documents.</small>
               </div>
@@ -835,6 +846,7 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
             <strong>PAYMENT OPTIONS</strong>
             <span>{form.mobile_money_provider || 'MTN / Airtel'}: {form.mobile_money_number || form.phone || '+256 756 286 160'}</span>
             <span>Recipient: {form.mobile_money_name || form.name || 'NexTone'}</span>
+            {form.airtel_pay_code && <span>Airtel Pay: Code {form.airtel_pay_code}{form.airtel_pay_name ? ` (${form.airtel_pay_name})` : ''}</span>}
             {form.bank_name && form.bank_account_number && <span>Bank: {form.bank_name} · {form.bank_account_number}</span>}
           </div>
           <div className="preview-footer">{form.website || 'nextone.ug'} <span>·</span> {form.phone || '+256 756 286 160'}</div>
@@ -1191,10 +1203,12 @@ function PaymentEditor({ document, payments, acceptedMethods, close, save }: { d
   const [paidAt, setPaidAt] = useState(today())
   const [reference, setReference] = useState('')
   const [pickingMethod, setPickingMethod] = useState(false)
-  const methodOptions: SheetOption[] = (['Mobile Money', 'Cash', 'Bank transfer', 'Card', 'Other'] as PaymentMethod[]).map(m => ({
+  const methodOptions: SheetOption[] = (['Mobile Money', 'Airtel Pay', 'Cash', 'Bank transfer', 'Card', 'Other'] as PaymentMethod[]).map(m => ({
     value: m,
     label: m,
-    subtitle: acceptedMethods?.includes(m) ? 'Enabled in Settings' : 'Additional channel',
+    subtitle: m === 'Airtel Pay'
+      ? 'Airtel Pay merchant code (*185*9#)'
+      : acceptedMethods?.includes(m) ? 'Enabled in Settings' : 'Additional channel',
   }))
   const submit = (event: React.FormEvent) => { event.preventDefault(); const numeric = Number(amount); if (numeric <= 0 || numeric > remaining) return; save({ document_id: document.id, paid_at: paidAt, amount: numeric, method, reference }) }
   return <Dialog title="Record a payment" subtitle="A receipt will be created for this payment." close={close}><form className="dialog-form" onSubmit={submit}><div className="payment-context"><span className="round-mini teal"><ReceiptText size={17}/></span><div><strong>{document.number} · {document.customer_name}</strong><small>{money(remaining)} remaining on this invoice</small></div></div><Field label="Amount received (UGX)" value={amount} onChange={setAmount} type="number" required/><div className="form-row"><Field label="Payment date" value={paidAt} onChange={setPaidAt} type="date" required/><div className="field"><span>Payment method</span><button type="button" className="select-trigger" onClick={() => setPickingMethod(true)}><span className="select-trigger-value"><strong>{method}</strong></span><ChevronDown size={15}/></button></div></div><Field label="Reference (optional)" value={reference} onChange={setReference} placeholder="Transaction ID or short note"/><div className="payment-remainder"><span>Balance after payment</span><strong>{money(Math.max(0, remaining - (Number(amount) || 0)))}</strong></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!Number(amount) || Number(amount) > remaining}><ReceiptText size={16}/> Record payment</Button></div></form>{pickingMethod && <BottomSelectSheet title="Select payment method" subtitle="Choose how the customer settled this payment." options={methodOptions} value={method} onSelect={val => { setMethod(val as PaymentMethod); setPickingMethod(false) }} close={() => setPickingMethod(false)} />}</Dialog>
