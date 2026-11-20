@@ -16,6 +16,7 @@ import { DocumentCanvas, downloadDocument, downloadStatement, totalOf } from './
 type Page = 'Overview' | 'Documents' | 'Customers' | 'Catalog' | 'Statements' | 'Settings'
 type DocsTab = 'Quotations' | 'Invoices' | 'Receipts'
 type Notice = { text: string; kind?: 'error' | 'success' }
+type ConfirmState = { title: string; message: string; confirmLabel: string; tone?: 'danger' | 'primary'; onConfirm: () => Promise<void> | void }
 const initialStore: Store = { customers: [], catalog: [], documents: [], payments: [], settings: defaultSettings }
 const money = (value: number) => `UGX ${Math.round(value).toLocaleString('en-UG')}`
 const dateFmt = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -32,6 +33,8 @@ export default function App() {
   const [user, setUser] = useState<{ email?: string } | null>(null)
   const [authReady, setAuthReady] = useState(!supabase)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const noticeTimerRef = useRef<number | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null)
   const [query, setQuery] = useState('')
   const [modal, setModal] = useState<'document' | 'customer' | 'item' | 'payment' | 'receipt' | 'statement' | null>(null)
   const [activeDoc, setActiveDoc] = useState<SalesDocument | null>(null)
@@ -91,7 +94,12 @@ export default function App() {
     }
   }
   const showNotice = (text: string, kind: 'error' | 'success' = 'success') => {
-    setNotice({ text, kind }); window.setTimeout(() => setNotice(null), 3800)
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+    setNotice({ text, kind })
+    noticeTimerRef.current = window.setTimeout(() => {
+      setNotice(null)
+      noticeTimerRef.current = null
+    }, kind === 'error' ? 5500 : 4000)
   }
 
   useEffect(() => {
@@ -169,10 +177,20 @@ export default function App() {
     }
     setModal(null); setActiveDoc(null); showNotice(`${row.type === 'invoice' ? 'Invoice' : 'Quotation'} ${existing ? 'updated' : 'created'} successfully.`)
   }
-  const deleteDocument = async (doc: SalesDocument) => {
-    if (!window.confirm(`Delete ${doc.number}? This also deletes its receipts.`)) return
-    if (!await syncStore({ ...store, documents: store.documents.filter(row => row.id !== doc.id), payments: store.payments.filter(row => row.document_id !== doc.id) })) return
-    setActiveDoc(null); showNotice('Document deleted.')
+  const deleteDocument = (doc: SalesDocument) => {
+    setConfirmDialog({
+      title: `Delete ${doc.number}?`,
+      message: doc.type === 'invoice'
+        ? 'This permanently removes the invoice and any payment receipts recorded against it.'
+        : 'This permanently removes this quotation from your workspace.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: async () => {
+        if (!await syncStore({ ...store, documents: store.documents.filter(row => row.id !== doc.id), payments: store.payments.filter(row => row.document_id !== doc.id) })) return
+        setActiveDoc(null)
+        showNotice('Document deleted.')
+      },
+    })
   }
   const saveCustomer = async (row: Customer) => {
     const rows = store.customers.some(x => x.id === row.id) ? store.customers.map(x => x.id === row.id ? row : x) : [row, ...store.customers]
@@ -199,16 +217,32 @@ export default function App() {
     setModal('receipt')
     showNotice(`Receipt ${row.number} recorded.`)
   }
-  const removeCustomer = async (customer: Customer) => {
+  const removeCustomer = (customer: Customer) => {
     const linked = store.documents.filter(d => d.customer_id === customer.id).length
-    if (!window.confirm(linked ? `${customer.name} has ${linked} document(s). Delete the customer record? Documents will remain.` : `Delete ${customer.name}?`)) return
-    if (!await syncStore({ ...store, customers: store.customers.filter(c => c.id !== customer.id) })) return
-    showNotice('Customer deleted.')
+    setConfirmDialog({
+      title: `Delete ${customer.name}?`,
+      message: linked
+        ? `${customer.name} has ${linked} linked document${linked === 1 ? '' : 's'}. The customer record will be removed while existing documents remain.`
+        : 'This customer will be permanently removed from your address book.',
+      confirmLabel: 'Delete customer',
+      tone: 'danger',
+      onConfirm: async () => {
+        if (!await syncStore({ ...store, customers: store.customers.filter(c => c.id !== customer.id) })) return
+        showNotice('Customer deleted.')
+      },
+    })
   }
-  const removeItem = async (item: CatalogItem) => {
-    if (!window.confirm(`Delete ${item.name} from the catalog? Existing documents will keep their saved item details.`)) return
-    if (!await syncStore({ ...store, catalog: store.catalog.filter(i => i.id !== item.id) })) return
-    showNotice('Item removed from catalog.')
+  const removeItem = (item: CatalogItem) => {
+    setConfirmDialog({
+      title: `Delete ${item.name}?`,
+      message: 'Existing documents will keep their saved item details, but it will be removed from your catalog.',
+      confirmLabel: 'Remove item',
+      tone: 'danger',
+      onConfirm: async () => {
+        if (!await syncStore({ ...store, catalog: store.catalog.filter(i => i.id !== item.id) })) return
+        showNotice('Item removed from catalog.')
+      },
+    })
   }
 
   if (!authReady || loading) return (
@@ -221,7 +255,7 @@ export default function App() {
       <small>Loading your printing & branding workspace…</small>
     </div>
   )
-  if (supabase && !user) return <><Login onNotice={showNotice} />{notice && <div className={`toast ${notice.kind === 'error' ? 'error' : ''}`}><span>{notice.kind === 'error' ? <CircleAlert size={18}/> : <Check size={18}/>}</span>{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}</>
+  if (supabase && !user) return <><Login onNotice={showNotice} /><ToastBanner notice={notice} onClose={() => setNotice(null)} /></>
   const nav = [
     { name: 'Overview' as Page, icon: LayoutDashboard },
     { name: 'Documents' as Page, icon: FileText, count: store.documents.length },
@@ -277,18 +311,19 @@ export default function App() {
         {page === 'Customers' && <CustomersPage customers={store.customers} documents={store.documents} query={query} setQuery={setQuery} create={() => { setEditingCustomer(null); setModal('customer') }} edit={customer => { setEditingCustomer(customer); setModal('customer') }} remove={removeCustomer} viewStatement={customer => { setStatementCustomer(customer.id); setModal('statement') }} newDocumentForCustomer={customer => newDocument('quotation', undefined, customer)} />}
         {page === 'Catalog' && <CatalogPage items={store.catalog} query={query} setQuery={setQuery} create={() => { setEditingItem(null); setModal('item') }} edit={item => { setEditingItem(item); setModal('item') }} remove={removeItem} />}
         {page === 'Statements' && <StatementsPage store={store} openStatement={id => { setStatementCustomer(id); setModal('statement') }} />}
-        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} syncStore={syncStore} promptInstall={promptInstall} isInstalled={isInstalled} />}
+        {page === 'Settings' && <SettingsPage store={store} save={next => syncStore({ ...store, settings: next })} editing={editingSettings} setEditing={setEditingSettings} notice={showNotice} syncStore={syncStore} promptInstall={promptInstall} isInstalled={isInstalled} confirmAction={setConfirmDialog} />}
       </div>
     </main>
     <nav className="floating-nav" aria-label="Main navigation">{nav.map(item => { const Icon = item.icon; return <button key={item.name} className={`floating-nav-item ${page === item.name ? 'active' : ''}`} onClick={() => setPage(item.name)} aria-label={item.name} title={item.name}><Icon size={20}/>{item.count !== undefined && item.count > 0 && <span className="nav-badge"/>}</button> })}</nav>
-    {activeDoc && !modal && <DocumentDetail document={activeDoc} store={store} close={() => setActiveDoc(null)} edit={() => { setModal('document') }} duplicate={() => newDocument(activeDoc.type, activeDoc)} convert={() => newDocument('invoice', activeDoc)} addPayment={() => { setPayDoc(activeDoc); setModal('payment') }} onDelete={() => deleteDocument(activeDoc)} />}
+    {activeDoc && !modal && <DocumentDetail document={activeDoc} store={store} close={() => setActiveDoc(null)} edit={() => { setModal('document') }} duplicate={() => newDocument(activeDoc.type, activeDoc)} convert={() => newDocument('invoice', activeDoc)} addPayment={() => { setPayDoc(activeDoc); setModal('payment') }} onDelete={() => deleteDocument(activeDoc)} onError={msg => showNotice(msg, 'error')} />}
     {modal === 'document' && <DocumentEditor doc={activeDoc} store={store} close={() => { setModal(null); setActiveDoc(null) }} save={saveDocument} />}
     {modal === 'customer' && <CustomerEditor customer={editingCustomer} close={() => setModal(null)} save={saveCustomer} />}
     {modal === 'item' && <ItemEditor item={editingItem} close={() => setModal(null)} save={saveItem} />}
     {modal === 'payment' && payDoc && <PaymentEditor document={payDoc} payments={store.payments} acceptedMethods={store.settings.payment_methods} close={() => { setModal(null); setPayDoc(null) }} save={savePayment} />}
-    {modal === 'receipt' && lastReceipt && <ReceiptReadyModal doc={lastReceipt.doc} payment={lastReceipt.payment} remaining={lastReceipt.remaining} payments={store.payments} settings={store.settings} close={() => { setModal(null); setLastReceipt(null) }} viewReceipts={() => { setModal(null); setLastReceipt(null); setActiveDoc(null); openDocuments('Receipts') }} />}
-    {modal === 'statement' && <StatementModal store={store} customerId={statementCustomer} close={() => setModal(null)} />}
-    {notice && <div className={`toast ${notice.kind === 'error' ? 'error' : ''}`}><span>{notice.kind === 'error' ? <CircleAlert size={18}/> : <Check size={18}/>}</span>{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}
+    {modal === 'receipt' && lastReceipt && <ReceiptReadyModal doc={lastReceipt.doc} payment={lastReceipt.payment} remaining={lastReceipt.remaining} payments={store.payments} settings={store.settings} close={() => { setModal(null); setLastReceipt(null) }} viewReceipts={() => { setModal(null); setLastReceipt(null); setActiveDoc(null); openDocuments('Receipts') }} onError={msg => showNotice(msg, 'error')} />}
+    {modal === 'statement' && <StatementModal store={store} customerId={statementCustomer} close={() => setModal(null)} onError={msg => showNotice(msg, 'error')} />}
+    <ConfirmDialog state={confirmDialog} close={() => setConfirmDialog(null)} />
+    <ToastBanner notice={notice} onClose={() => setNotice(null)} />
   </div>
 }
 
@@ -767,7 +802,7 @@ function StatementsPage({ store, openStatement }: { store: Store; openStatement:
   )
 }
 
-function SettingsPage({ store, save, editing, setEditing, notice, syncStore, promptInstall, isInstalled }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean>; promptInstall: () => void; isInstalled: boolean }) {
+function SettingsPage({ store, save, editing, setEditing, notice, syncStore, promptInstall, isInstalled, confirmAction }: { store: Store; save: (next: Store['settings']) => Promise<boolean>; editing: boolean; setEditing: (editing: boolean) => void; notice: (text: string, kind?: 'error'|'success') => void; syncStore: (next: Store) => Promise<boolean>; promptInstall: () => void; isInstalled: boolean; confirmAction: (next: ConfirmState) => void }) {
   const [form, setForm] = useState(store.settings)
   const [isProcessing, setIsProcessing] = useState(false)
   const [sheetOpen, setSheetOpen] = useState<'methods' | 'provider' | null>(null)
@@ -800,21 +835,26 @@ function SettingsPage({ store, save, editing, setEditing, notice, syncStore, pro
     reader.readAsText(file)
   }
 
-  const handleResetToOfficialBackup = async () => {
-    if (!window.confirm('Restore database from the official backup (Mr. Timothy, John k, Mr. Setimba, 14 products, ORD-2026-0100, INV-2026-0100, INV-2026-0101)? This will sync directly into the database.')) {
-      return
-    }
-    try {
-      setIsProcessing(true)
-      const success = await syncStore(initialBackupStore)
-      if (success) {
-        notice('Database successfully synchronized with official backup records!', 'success')
-      }
-    } catch (err) {
-      notice(err instanceof Error ? err.message : 'Could not restore backup', 'error')
-    } finally {
-      setIsProcessing(false)
-    }
+  const handleResetToOfficialBackup = () => {
+    confirmAction({
+      title: 'Restore official backup?',
+      message: 'This syncs Mr. Timothy, John k, Mr. Setimba, 14 catalog products, ORD-2026-0100, INV-2026-0100, and INV-2026-0101 into your database.',
+      confirmLabel: 'Restore backup',
+      tone: 'primary',
+      onConfirm: async () => {
+        try {
+          setIsProcessing(true)
+          const success = await syncStore(initialBackupStore)
+          if (success) {
+            notice('Database successfully synchronized with official backup records!', 'success')
+          }
+        } catch (err) {
+          notice(err instanceof Error ? err.message : 'Could not restore backup', 'error')
+        } finally {
+          setIsProcessing(false)
+        }
+      },
+    })
   }
 
   const allPaymentMethods: { value: PaymentMethod; label: string; subtitle: string }[] = [
@@ -1257,6 +1297,67 @@ function BottomMultiSelectSheet({
   )
 }
 
+function ToastBanner({ notice, onClose }: { notice: Notice | null; onClose: () => void }) {
+  if (!notice) return null
+  const isError = notice.kind === 'error'
+  return (
+    <div className={`toast ${isError ? 'error' : ''}`} role="status" aria-live={isError ? 'assertive' : 'polite'}>
+      <span className="toast-icon">{isError ? <CircleAlert size={16} /> : <Check size={16} />}</span>
+      <div className="toast-body">
+        <strong className="toast-title">{isError ? 'Action could not be completed' : 'Success'}</strong>
+        <span className="toast-message">{notice.text}</span>
+      </div>
+      <button type="button" className="toast-close" onClick={onClose} aria-label="Dismiss notification">
+        <X size={15} />
+      </button>
+    </div>
+  )
+}
+
+function ConfirmDialog({ state, close }: { state: ConfirmState | null; close: () => void }) {
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!state) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [state, busy, close])
+
+  if (!state) return null
+  const tone = state.tone || 'danger'
+  const handleConfirm = async () => {
+    setBusy(true)
+    try {
+      await state.onConfirm()
+    } finally {
+      setBusy(false)
+      close()
+    }
+  }
+
+  return (
+    <div className="modal-backdrop confirm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !busy) close() }}>
+      <div className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-desc">
+        <div className="confirm-head">
+          <span className={`confirm-icon ${tone}`}>
+            {tone === 'danger' ? <Trash2 size={18} /> : <RefreshCw size={18} />}
+          </span>
+          <div className="confirm-copy">
+            <h3 id="confirm-title">{state.title}</h3>
+            <p id="confirm-desc">{state.message}</p>
+          </div>
+        </div>
+        <div className="confirm-actions">
+          <Button type="button" variant="secondary" disabled={busy} onClick={close}>Cancel</Button>
+          <Button type="button" variant={tone === 'danger' ? 'danger' : 'primary'} disabled={busy} onClick={() => void handleConfirm()}>
+            {busy ? 'Working…' : state.confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ItemEditor({ item, close, save }: { item: CatalogItem|null; close: () => void; save: (item: CatalogItem) => void }) {
   const [form, setForm] = useState({ name: item?.name || '', description: item?.description || '', category: item?.category || 'Paper Printing', unit: item?.unit || 'piece', price: String(item?.price || '') })
   const [pickingCategory, setPickingCategory] = useState(false)
@@ -1334,7 +1435,7 @@ function PaymentEditor({ document, payments, acceptedMethods, close, save }: { d
   return <Dialog title="Record a payment" subtitle="A receipt will be created for this payment." close={close}><form className="dialog-form" onSubmit={submit}><div className="payment-context"><span className="round-mini teal"><ReceiptText size={17}/></span><div><strong>{document.number} · {document.customer_name}</strong><small>{money(remaining)} remaining on this invoice</small></div></div><Field label="Amount received (UGX)" value={amount} onChange={setAmount} type="number" required/><div className="form-row"><Field label="Payment date" value={paidAt} onChange={setPaidAt} type="date" required/><div className="field"><span>Payment method</span><button type="button" className="select-trigger" onClick={() => setPickingMethod(true)}><span className="select-trigger-value"><strong>{method}</strong></span><ChevronDown size={15}/></button></div></div><Field label="Reference (optional)" value={reference} onChange={setReference} placeholder="Transaction ID or short note"/><div className="payment-remainder"><span>Balance after payment</span><strong>{money(Math.max(0, remaining - (Number(amount) || 0)))}</strong></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!Number(amount) || Number(amount) > remaining}><ReceiptText size={16}/> Record payment</Button></div></form>{pickingMethod && <BottomSelectSheet title="Select payment method" subtitle="Choose how the customer settled this payment." options={methodOptions} value={method} onSelect={val => { setMethod(val as PaymentMethod); setPickingMethod(false) }} close={() => setPickingMethod(false)} />}</Dialog>
 }
 
-function ReceiptReadyModal({ doc, payment, remaining, payments, settings, close, viewReceipts }: { doc: SalesDocument; payment: Payment; remaining: number; payments: Payment[]; settings: Store['settings']; close: () => void; viewReceipts: () => void }) {
+function ReceiptReadyModal({ doc, payment, remaining, payments, settings, close, viewReceipts, onError }: { doc: SalesDocument; payment: Payment; remaining: number; payments: Payment[]; settings: Store['settings']; close: () => void; viewReceipts: () => void; onError: (msg: string) => void }) {
   const [exporting, setExporting] = useState<'pdf' | 'png' | null>(null)
   const full = remaining <= 0
 
@@ -1343,7 +1444,7 @@ function ReceiptReadyModal({ doc, payment, remaining, payments, settings, close,
     try {
       await downloadDocument(doc, payments, settings, format, payment)
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not download receipt.')
+      onError(e instanceof Error ? e.message : 'Could not download receipt.')
     } finally {
       setExporting(null)
     }
@@ -1392,17 +1493,17 @@ function ReceiptReadyModal({ doc, payment, remaining, payments, settings, close,
   )
 }
 
-function DocumentDetail({ document, store, close, edit, duplicate, convert, addPayment, onDelete }: { document: SalesDocument; store: Store; close: () => void; edit: () => void; duplicate: () => void; convert: () => void; addPayment: () => void; onDelete: () => void }) {
+function DocumentDetail({ document, store, close, edit, duplicate, convert, addPayment, onDelete, onError }: { document: SalesDocument; store: Store; close: () => void; edit: () => void; duplicate: () => void; convert: () => void; addPayment: () => void; onDelete: () => void; onError: (msg: string) => void }) {
   const payments = store.payments.filter(p => p.document_id === document.id)
   const paid = paidFor(store.payments, document.id); const total = docTotal(document); const balance = Math.max(0, total - paid)
   const [exporting, setExporting] = useState(false)
-  const exportIt = async (format: 'pdf'|'png') => { setExporting(true); try { await downloadDocument(document, store.payments, store.settings, format); } catch (e) { window.alert(e instanceof Error ? e.message : 'Could not export document.') } finally { setExporting(false) } }
+  const exportIt = async (format: 'pdf'|'png') => { setExporting(true); try { await downloadDocument(document, store.payments, store.settings, format); } catch (e) { onError(e instanceof Error ? e.message : 'Could not export document.') } finally { setExporting(false) } }
   return <div className="detail-overlay"><div className="detail-panel"><div className="detail-toolbar"><button className="icon-button back-button" onClick={close}><ArrowLeft size={19}/></button><div><span className="panel-kicker">DOCUMENT DETAILS</span><div className="detail-number">{document.number}</div></div><button className="icon-button" onClick={close} aria-label="Close"><X size={19}/></button></div><div className="detail-action-row"><Button variant="secondary" onClick={() => void exportIt('pdf')} disabled={exporting}><Download size={15}/> Download PDF</Button><Button variant="secondary" onClick={() => void exportIt('png')} disabled={exporting}><Printer size={15}/> Download PNG</Button><button className="icon-button" title="More actions" onClick={duplicate}><MoreHorizontal size={20}/></button></div><div className="detail-scroll"><div className="detail-overview"><div><span className={`detail-type ${document.type}`}>{document.type}</span><h2>{document.customer_name}</h2><p>{document.customer_email || document.customer_phone}</p></div><StatusPill status={document.status}/></div><div className="detail-dates"><div><span>ISSUED</span><strong>{dateFmt(document.issue_date)}</strong></div><div><span>{document.type === 'invoice' ? 'DUE DATE' : 'VALID UNTIL'}</span><strong>{dateFmt(document.due_date)}</strong></div></div><div className="detail-items"><div className="detail-items-head"><strong>Items & services</strong><span>{document.items.length} lines</span></div>{document.items.map(item => <div className="detail-item" key={item.id}><div><strong>{item.description}</strong><small>{item.quantity} {item.unit} × {money(item.unit_price)}</small></div><strong>{money(item.quantity * item.unit_price)}</strong></div>)}</div><div className="detail-totals"><div><span>Subtotal</span><strong>{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0))}</strong></div>{document.discount_percent > 0 && <div><span>Discount ({document.discount_percent}%)</span><strong>−{money(document.items.reduce((s, i) => s + i.quantity * i.unit_price, 0) - total)}</strong></div>}<div className="grand"><span>Grand total</span><strong>{money(total)}</strong></div>{document.type === 'invoice' && <><div className="paid-row"><span>Paid to date</span><strong>{money(paid)}</strong></div><div className="balance-row"><span>Balance due</span><strong>{money(balance)}</strong></div></>}</div>{document.notes && <div className="detail-note"><span>NOTE</span><p>{document.notes}</p></div>}
     {document.type === 'invoice' && <div className="receipts-section"><div className="detail-items-head"><strong>Payments & receipts</strong>{balance > 0 && <button className="text-link" onClick={addPayment}><Plus size={15}/> Add payment</button>}</div>{payments.length ? payments.map(payment => <div className="receipt-row" key={payment.id}><span className="receipt-icon"><ReceiptText size={16}/></span><span><strong>{payment.number}</strong><small>{dateFmt(payment.paid_at)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</small></span><strong>{money(payment.amount)}</strong><div style={{ display: 'flex', gap: '4px' }}><button className="icon-button" title="Download receipt PDF" onClick={() => downloadDocument(document, store.payments, store.settings, 'pdf', payment)}><Download size={15}/></button><button className="icon-button" title="Download receipt PNG" onClick={() => downloadDocument(document, store.payments, store.settings, 'png', payment)}><Printer size={15}/></button></div></div>) : <p className="muted-copy">No payments recorded yet.</p>}</div>}
     </div><div className="detail-footer"><div className="detail-foot-actions"><Button variant="ghost" onClick={onDelete} className="delete-button"><Trash2 size={15}/> Delete</Button><Button variant="secondary" onClick={edit}><Pencil size={15}/> Edit</Button>{document.type === 'quotation' && document.status !== 'converted' && <Button onClick={convert}><FileCheck2 size={15}/> Make invoice</Button>}{document.type === 'invoice' && balance > 0 && <Button onClick={addPayment}><WalletCards size={15}/> Record payment</Button>}</div><Button variant="ghost" onClick={duplicate}><Plus size={15}/> Duplicate</Button></div></div></div>
 }
 
-function StatementModal({ store, customerId, close }: { store: Store; customerId: string; close: () => void }) {
+function StatementModal({ store, customerId, close, onError }: { store: Store; customerId: string; close: () => void; onError: (msg: string) => void }) {
   const customer = store.customers.find(c => c.id === customerId)
   const docs = store.documents.filter(d => d.customer_id === customerId && d.type === 'invoice').sort((a, b) => a.issue_date.localeCompare(b.issue_date))
   const total = docs.reduce((sum, doc) => sum + docTotal(doc), 0); const paid = docs.reduce((sum, doc) => sum + paidFor(store.payments, doc.id), 0)
@@ -1414,7 +1515,7 @@ function StatementModal({ store, customerId, close }: { store: Store; customerId
     try {
       await downloadStatement(statement, format)
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not export statement.')
+      onError(e instanceof Error ? e.message : 'Could not export statement.')
     } finally {
       setExporting(false)
     }
