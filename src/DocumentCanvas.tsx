@@ -84,6 +84,23 @@ function Brand({ settings }: { settings: CompanySettings }) {
   )
 }
 
+function PaperSignature({ settings }: { settings: CompanySettings }) {
+  const signerName = settings.name || 'NexTone'
+  return (
+    <div className="paper-signature-row">
+      <div className="paper-signature-block">
+        <img
+          src="/assets/aistudio/qwr-01_cf771126.png"
+          alt={`${signerName} signature`}
+          className="paper-signature-img"
+        />
+        <div className="paper-signature-line" />
+        <strong className="paper-signature-name">{signerName}</strong>
+      </div>
+    </div>
+  )
+}
+
 function PaperFooter({ settings }: { settings: CompanySettings }) {
   const phoneClean = (settings.phone || '+256756286160').replace(/\s+/g, '')
   return (
@@ -335,6 +352,7 @@ export function DocumentCanvas({
           </div>
         </div>
 
+        <PaperSignature settings={statement.settings} />
         <PaperFooter settings={statement.settings} />
       </div>
     )
@@ -647,6 +665,7 @@ export function DocumentCanvas({
         </>
       )}
 
+      <PaperSignature settings={settings} />
       <PaperFooter settings={settings} />
     </div>
   )
@@ -657,8 +676,13 @@ async function renderPng(node: HTMLElement) {
   await document.fonts.ready
   await Promise.all(
     Array.from(node.querySelectorAll('img')).map(img => {
-      if (img.complete) return Promise.resolve()
-      return img.decode().catch(() => undefined)
+      const waitLoad = img.complete
+        ? Promise.resolve()
+        : new Promise<void>(resolve => {
+            img.addEventListener('load', () => resolve(), { once: true })
+            img.addEventListener('error', () => resolve(), { once: true })
+          })
+      return waitLoad.then(() => img.decode().catch(() => undefined))
     })
   )
   const originalStyle = node.getAttribute('style') || ''

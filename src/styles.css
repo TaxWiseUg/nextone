@@ -2724,8 +2724,51 @@ tbody tr.click-row:hover td {
   margin-top: 4px;
 }
 
-.paper-footer {
+.paper-signature-row {
   margin-top: auto;
+  padding-top: 8px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  position: relative;
+  z-index: 2;
+}
+
+.paper-signature-block {
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.paper-signature-img {
+  height: 46px;
+  width: auto;
+  max-width: 190px;
+  object-fit: contain;
+  display: block;
+  margin-bottom: -4px;
+  pointer-events: none;
+}
+
+.paper-signature-line {
+  width: 100%;
+  height: 1px;
+  background: rgba(18, 44, 55, 0.28);
+  margin: 2px 0 5px;
+}
+
+.paper-signature-name {
+  font: 800 13px var(--font-display);
+  color: #102b33;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+}
+
+.paper-footer {
+  margin-top: 0;
   background: #0b434a;
   color: #ffffff;
   border-radius: 20px;
