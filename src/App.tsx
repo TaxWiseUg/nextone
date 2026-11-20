@@ -14,6 +14,7 @@ import { defaultSettings } from './types'
 import { DocumentCanvas, downloadDocument, downloadStatement, totalOf } from './DocumentCanvas'
 
 type Page = 'Overview' | 'Documents' | 'Customers' | 'Catalog' | 'Statements' | 'Settings'
+type DocsTab = 'Quotations' | 'Invoices' | 'Receipts'
 type Notice = { text: string; kind?: 'error' | 'success' }
 const initialStore: Store = { customers: [], catalog: [], documents: [], payments: [], settings: defaultSettings }
 const money = (value: number) => `UGX ${Math.round(value).toLocaleString('en-UG')}`
@@ -26,16 +27,18 @@ function isInvoice(doc: SalesDocument) { return doc.type === 'invoice' }
 export default function App() {
   const [store, setStore] = useState<Store>(initialStore)
   const [page, setPage] = useState<Page>('Overview')
+  const [docsTab, setDocsTab] = useState<DocsTab>('Quotations')
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<{ email?: string } | null>(null)
   const [authReady, setAuthReady] = useState(!supabase)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [query, setQuery] = useState('')
-  const [modal, setModal] = useState<'document' | 'customer' | 'item' | 'payment' | 'statement' | null>(null)
+  const [modal, setModal] = useState<'document' | 'customer' | 'item' | 'payment' | 'receipt' | 'statement' | null>(null)
   const [activeDoc, setActiveDoc] = useState<SalesDocument | null>(null)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null)
   const [payDoc, setPayDoc] = useState<SalesDocument | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<{ doc: SalesDocument; payment: Payment; remaining: number } | null>(null)
   const [statementCustomer, setStatementCustomer] = useState('')
   const [editingSettings, setEditingSettings] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -185,10 +188,16 @@ export default function App() {
     const row: Payment = { ...payment, id: makeId('payment'), number: nextReceiptNumber(store.payments), created_at: new Date().toISOString() }
     const payments = [row, ...store.payments]
     const doc = store.documents.find(d => d.id === row.document_id)!
-    const status: SalesDocument['status'] = paidFor(payments, doc.id) >= docTotal(doc) ? 'paid' : 'partial'
-    const documents = store.documents.map(d => d.id === doc.id ? { ...d, status } : d)
+    const remaining = Math.max(0, docTotal(doc) - paidFor(payments, doc.id))
+    const status: SalesDocument['status'] = remaining <= 0 ? 'paid' : 'partial'
+    const updatedDoc: SalesDocument = { ...doc, status }
+    const documents = store.documents.map(d => d.id === doc.id ? updatedDoc : d)
     if (!await syncStore({ ...store, payments, documents })) return
-    setModal(null); setPayDoc(null); showNotice(`Receipt ${row.number} recorded.`)
+    if (activeDoc?.id === doc.id) setActiveDoc(updatedDoc)
+    setPayDoc(null)
+    setLastReceipt({ doc: updatedDoc, payment: row, remaining })
+    setModal('receipt')
+    showNotice(`Receipt ${row.number} recorded.`)
   }
   const removeCustomer = async (customer: Customer) => {
     const linked = store.documents.filter(d => d.customer_id === customer.id).length
@@ -221,6 +230,7 @@ export default function App() {
     { name: 'Statements' as Page, icon: FileChartColumnIncreasing },
     { name: 'Settings' as Page, icon: Settings },
   ]
+  const openDocuments = (tab: DocsTab) => { setDocsTab(tab); setPage('Documents') }
   const filteredDocs = store.documents.filter(doc => `${doc.number} ${doc.customer_name} ${doc.type} ${doc.status}`.toLowerCase().includes(query.toLowerCase()))
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -262,8 +272,8 @@ export default function App() {
       </header>
       {isDemo && <div className="demo-banner"><Sparkles size={15}/><span><strong>Preview mode</strong> — changes are saved in this browser. Connect Supabase to use your secured live workspace.</span></div>}
       <div className="page-wrap">
-        {page === 'Overview' && <Overview store={store} collected={collected} outstanding={outstanding} overdueCount={overdueCount} openPage={setPage} newDocument={newDocument} openDoc={setActiveDoc} setModal={setModal} />}
-        {page === 'Documents' && <DocumentsPage documents={filteredDocs} allDocuments={store.documents} payments={store.payments} settings={store.settings} query={query} setQuery={setQuery} newDocument={newDocument} openDoc={setActiveDoc} addPayment={doc => { setPayDoc(doc); setModal('payment') }} onDelete={deleteDocument} />}
+        {page === 'Overview' && <Overview store={store} collected={collected} outstanding={outstanding} overdueCount={overdueCount} openPage={setPage} openDocuments={openDocuments} newDocument={newDocument} openDoc={setActiveDoc} setModal={setModal} />}
+        {page === 'Documents' && <DocumentsPage documents={filteredDocs} allDocuments={store.documents} payments={store.payments} settings={store.settings} tab={docsTab} setTab={setDocsTab} query={query} setQuery={setQuery} newDocument={newDocument} openDoc={setActiveDoc} addPayment={doc => { setPayDoc(doc); setModal('payment') }} onDelete={deleteDocument} />}
         {page === 'Customers' && <CustomersPage customers={store.customers} documents={store.documents} query={query} setQuery={setQuery} create={() => { setEditingCustomer(null); setModal('customer') }} edit={customer => { setEditingCustomer(customer); setModal('customer') }} remove={removeCustomer} viewStatement={customer => { setStatementCustomer(customer.id); setModal('statement') }} newDocumentForCustomer={customer => newDocument('quotation', undefined, customer)} />}
         {page === 'Catalog' && <CatalogPage items={store.catalog} query={query} setQuery={setQuery} create={() => { setEditingItem(null); setModal('item') }} edit={item => { setEditingItem(item); setModal('item') }} remove={removeItem} />}
         {page === 'Statements' && <StatementsPage store={store} openStatement={id => { setStatementCustomer(id); setModal('statement') }} />}
@@ -276,6 +286,7 @@ export default function App() {
     {modal === 'customer' && <CustomerEditor customer={editingCustomer} close={() => setModal(null)} save={saveCustomer} />}
     {modal === 'item' && <ItemEditor item={editingItem} close={() => setModal(null)} save={saveItem} />}
     {modal === 'payment' && payDoc && <PaymentEditor document={payDoc} payments={store.payments} acceptedMethods={store.settings.payment_methods} close={() => { setModal(null); setPayDoc(null) }} save={savePayment} />}
+    {modal === 'receipt' && lastReceipt && <ReceiptReadyModal doc={lastReceipt.doc} payment={lastReceipt.payment} remaining={lastReceipt.remaining} payments={store.payments} settings={store.settings} close={() => { setModal(null); setLastReceipt(null) }} viewReceipts={() => { setModal(null); setLastReceipt(null); setActiveDoc(null); openDocuments('Receipts') }} />}
     {modal === 'statement' && <StatementModal store={store} customerId={statementCustomer} close={() => setModal(null)} />}
     {notice && <div className={`toast ${notice.kind === 'error' ? 'error' : ''}`}><span>{notice.kind === 'error' ? <CircleAlert size={18}/> : <Check size={18}/>}</span>{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}
   </div>
@@ -307,7 +318,7 @@ function SearchBox({ value, onChange, placeholder = 'Search…' }: { value: stri
   return <label className="search-box"><Search size={17}/><input placeholder={placeholder} value={value} onChange={event => onChange(event.target.value)}/>{value && <button type="button" onClick={() => onChange('')} aria-label="Clear search"><X size={14}/></button>}</label>
 }
 
-function Overview({ store, collected, outstanding, overdueCount, openPage, newDocument, openDoc, setModal }: { store: Store; collected: number; outstanding: number; overdueCount: number; openPage: (page: Page) => void; newDocument: (type: DocumentType) => void; openDoc: (doc: SalesDocument) => void; setModal: (modal: 'customer'|'item'|null) => void }) {
+function Overview({ store, collected, outstanding, overdueCount, openPage, openDocuments, newDocument, openDoc, setModal }: { store: Store; collected: number; outstanding: number; overdueCount: number; openPage: (page: Page) => void; openDocuments: (tab: DocsTab) => void; newDocument: (type: DocumentType) => void; openDoc: (doc: SalesDocument) => void; setModal: (modal: 'customer'|'item'|null) => void }) {
   const invoices = store.documents.filter(isInvoice)
   const recent = store.documents.slice(0, 5)
   const totalQuotes = store.documents.filter(doc => doc.type === 'quotation').length
@@ -320,16 +331,16 @@ function Overview({ store, collected, outstanding, overdueCount, openPage, newDo
   return <>
     <PageHeading eyebrow={`${new Date().toLocaleDateString('en-GB', { weekday: 'long' }).toUpperCase()}, YOUR WORKSPACE AT A GLANCE`} title={`${greeting()}, NexTone`} subtitle="Here’s what’s happening with your business today." action={<Button onClick={() => newDocument('quotation')}><Plus size={17}/> Create quotation</Button>} />
     <div className="stats-grid">
-      <StatCard icon={Banknote} label="Collected this month" value={money(collected)} change="Payments received" tone="teal" onClick={() => openPage('Documents')} />
-      <StatCard icon={FileCheck2} label="Outstanding balance" value={money(outstanding)} change={overdueCount ? `${overdueCount} invoice${overdueCount > 1 ? 's' : ''} overdue` : 'No overdue invoices'} tone={overdueCount ? 'rose' : 'amber'} onClick={() => openPage('Documents')} />
-      <StatCard icon={ClipboardList} label="Active quotations" value={String(store.documents.filter(d => d.type === 'quotation' && !['converted'].includes(d.status)).length).padStart(2, '0')} change={`${totalQuotes} total quotations`} tone="blue" onClick={() => openPage('Documents')} />
+      <StatCard icon={Banknote} label="Collected this month" value={money(collected)} change="Payments received" tone="teal" onClick={() => openDocuments('Receipts')} />
+      <StatCard icon={FileCheck2} label="Outstanding balance" value={money(outstanding)} change={overdueCount ? `${overdueCount} invoice${overdueCount > 1 ? 's' : ''} overdue` : 'No overdue invoices'} tone={overdueCount ? 'rose' : 'amber'} onClick={() => openDocuments('Invoices')} />
+      <StatCard icon={ClipboardList} label="Active quotations" value={String(store.documents.filter(d => d.type === 'quotation' && !['converted'].includes(d.status)).length).padStart(2, '0')} change={`${totalQuotes} total quotations`} tone="blue" onClick={() => openDocuments('Quotations')} />
       <StatCard icon={Users} label="Total customers" value={String(store.customers.length).padStart(2, '0')} change="In your address book" tone="violet" onClick={() => openPage('Customers')} />
     </div>
     <div className="overview-grid">
       <section className="panel revenue-panel"><div className="panel-title-row"><div><div className="panel-kicker">YOUR MOMENTUM</div><h2>Revenue collected</h2></div><span className="select-static">Last 6 months <ChevronDown size={14}/></span></div><div className="revenue-total"><strong>{money(data.reduce((sum, x) => sum + x.value, 0))}</strong><span className="positive"><TrendingUp size={14}/> Payment history</span></div><div className="chart-area"><div className="chart-guides"><span>UGX {(max / 1000).toFixed(0)}k</span><span>UGX {(max / 2000).toFixed(0)}k</span><span>UGX 0</span></div><div className="bars">{data.map((entry, i) => <div className="bar-column" key={entry.label}><div className="bar-track"><div className={`bar-fill ${i === data.length - 1 ? 'bright' : ''}`} style={{ height: `${Math.max(4, entry.value / max * 100)}%` }} title={money(entry.value)} /></div><span>{entry.label}</span></div>)}</div></div></section>
       <section className="panel quick-panel"><div className="panel-title-row"><div><div className="panel-kicker">GET THINGS MOVING</div><h2>Quick actions</h2></div><span className="sparkle-dot"><Sparkles size={16}/></span></div><div className="quick-list">
         <QuickAction icon={FilePlus2} title="Create quotation" detail="Start with an estimate" onClick={() => newDocument('quotation')}/>
-        <QuickAction icon={ReceiptText} title="Record a payment" detail="Issue a customer receipt" onClick={() => openPage('Documents')}/>
+        <QuickAction icon={ReceiptText} title="Record a payment" detail="Issue a customer receipt" onClick={() => openDocuments('Invoices')}/>
         <QuickAction icon={UserRound} title="Add customer" detail="Grow your address book" onClick={() => setModal('customer')}/>
         <QuickAction icon={Package} title="Add a catalog item" detail="Save a product or service" onClick={() => setModal('item')}/>
       </div></section>
@@ -338,7 +349,7 @@ function Overview({ store, collected, outstanding, overdueCount, openPage, newDo
       <section className="panel recent-panel">
         <div className="panel-title-row">
           <div><div className="panel-kicker">THE LATEST</div><h2>Recent documents</h2></div>
-          <button className="text-link" onClick={() => openPage('Documents')}>View all <ArrowRight size={15}/></button>
+          <button className="text-link" onClick={() => openDocuments('Quotations')}>View all <ArrowRight size={15}/></button>
         </div>
         {/* Desktop View */}
         <div className="table-wrap desktop-only-table">
@@ -385,10 +396,10 @@ function Overview({ store, collected, outstanding, overdueCount, openPage, newDo
           <Activity size={18} className="muted-icon"/>
         </div>
         <div className="business-rows">
-          <BusinessMetric icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, '0')} color="teal" onClick={() => openPage('Documents')}/>
-          <BusinessMetric icon={BookOpenText} label="Quotes sent" value={String(totalQuotes).padStart(2, '0')} color="blue" onClick={() => openPage('Documents')}/>
-          <BusinessMetric icon={WalletCards} label="Payments recorded" value={String(store.payments.length).padStart(2, '0')} color="green" onClick={() => openPage('Documents')}/>
-          <BusinessMetric icon={Clock3} label="Waiting on payment" value={String(invoices.filter(d => docTotal(d) > paidFor(store.payments, d.id)).length).padStart(2, '0')} color="rose" onClick={() => openPage('Documents')}/>
+          <BusinessMetric icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, '0')} color="teal" onClick={() => openDocuments('Invoices')}/>
+          <BusinessMetric icon={BookOpenText} label="Quotes sent" value={String(totalQuotes).padStart(2, '0')} color="blue" onClick={() => openDocuments('Quotations')}/>
+          <BusinessMetric icon={WalletCards} label="Receipts issued" value={String(store.payments.length).padStart(2, '0')} color="green" onClick={() => openDocuments('Receipts')}/>
+          <BusinessMetric icon={Clock3} label="Waiting on payment" value={String(invoices.filter(d => docTotal(d) > paidFor(store.payments, d.id)).length).padStart(2, '0')} color="rose" onClick={() => openDocuments('Invoices')}/>
         </div>
         <div className="activity-footer">
           <button className="text-link" onClick={() => openPage('Customers')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: 0 }}>
@@ -429,117 +440,226 @@ function DocumentRow({ doc, payments, onClick }: { doc: SalesDocument; payments:
 function StatusPill({ status }: { status: string }) { const name = status === 'sent' ? 'Sent' : status === 'converted' ? 'Converted' : status.charAt(0).toUpperCase() + status.slice(1); return <span className={`status-pill ${status}`}><i/>{name}</span> }
 function EmptyState({ icon: Icon, title, detail, action }: { icon: React.ElementType; title: string; detail: string; action?: React.ReactNode }) { return <div className="empty-state"><span><Icon size={22}/></span><strong>{title}</strong><p>{detail}</p>{action}</div> }
 
-function DocumentsPage({ documents, allDocuments, payments, settings, query, setQuery, newDocument, openDoc, addPayment, onDelete }: { documents: SalesDocument[]; allDocuments: SalesDocument[]; payments: Payment[]; settings: Store['settings']; query: string; setQuery: (q: string) => void; newDocument: (type: DocumentType) => void; openDoc: (doc: SalesDocument) => void; addPayment: (doc: SalesDocument) => void; onDelete: (doc: SalesDocument) => void }) {
-  const [tab, setTab] = useState('All documents')
+function DocumentsPage({ documents, allDocuments, payments, settings, tab, setTab, query, setQuery, newDocument, openDoc, addPayment, onDelete }: { documents: SalesDocument[]; allDocuments: SalesDocument[]; payments: Payment[]; settings: Store['settings']; tab: DocsTab; setTab: (tab: DocsTab) => void; query: string; setQuery: (q: string) => void; newDocument: (type: DocumentType) => void; openDoc: (doc: SalesDocument) => void; addPayment: (doc: SalesDocument) => void; onDelete: (doc: SalesDocument) => void }) {
   const [pageNumber, setPageNumber] = useState(1)
   const pageSize = 8
 
-  const tabs = ['All documents', 'Quotations', 'Invoices']
-  const filtered = documents.filter(doc => tab === 'All documents' || (tab === 'Quotations' ? doc.type === 'quotation' : doc.type === 'invoice'))
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const currentPage = Math.min(pageNumber, totalPages)
-  const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-
+  const tabs: DocsTab[] = ['Quotations', 'Invoices', 'Receipts']
   const quoteCount = allDocuments.filter(d => d.type === 'quotation').length
   const invoiceCount = allDocuments.filter(d => d.type === 'invoice').length
-  const outstandingTotal = allDocuments.filter(isInvoice).reduce((sum, d) => sum + Math.max(0, docTotal(d) - paidFor(payments, d.id)), 0)
+  const receiptCount = payments.length
 
-  return <><PageHeading eyebrow="SALES & PAPERWORK" title="Documents" subtitle="Create quotations, track invoices, and keep every customer receipt in one place." action={<div className="split-action"><Button variant="secondary" onClick={() => newDocument('invoice')}><Plus size={16}/> Invoice</Button><Button onClick={() => newDocument('quotation')}><Plus size={16}/> New quotation</Button></div>}/>
+  const docById = new Map(allDocuments.map(d => [d.id, d]))
+  const receiptEntries = payments
+    .map(payment => ({ payment, doc: docById.get(payment.document_id) }))
+    .filter(entry => {
+      if (!query.trim()) return true
+      const q = query.toLowerCase()
+      return `${entry.payment.number} ${entry.payment.method} ${entry.payment.reference} ${entry.doc?.number || ''} ${entry.doc?.customer_name || ''}`.toLowerCase().includes(q)
+    })
+
+  const filteredDocs = documents.filter(doc => tab === 'Quotations' ? doc.type === 'quotation' : doc.type === 'invoice')
+  const activeCount = tab === 'Receipts' ? receiptEntries.length : filteredDocs.length
+  const totalPages = Math.max(1, Math.ceil(activeCount / pageSize))
+  const currentPage = Math.min(pageNumber, totalPages)
+  const docRows = filteredDocs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const receiptRows = receiptEntries.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  return <>
+    <PageHeading
+      eyebrow="SALES & PAPERWORK"
+      title="Quotations, Invoices & Receipts"
+      subtitle="Switch tabs to manage quotations, track invoice balances, or download partial and full payment receipts."
+      action={<div className="split-action"><Button variant="secondary" onClick={() => newDocument('invoice')}><Plus size={16}/> Invoice</Button><Button onClick={() => newDocument('quotation')}><Plus size={16}/> New quotation</Button></div>}
+    />
     <div className="document-stats">
-      <div className="click-row" onClick={() => { setTab('Quotations'); setPageNumber(1); }} style={{ cursor: 'pointer' }}><span className="round-mini teal"><FileText size={17}/></span><span>Quotations</span><strong>{quoteCount}</strong></div>
-      <div className="click-row" onClick={() => { setTab('Invoices'); setPageNumber(1); }} style={{ cursor: 'pointer' }}><span className="round-mini blue"><ReceiptText size={17}/></span><span>Invoices</span><strong>{invoiceCount}</strong></div>
-      <div><span className="round-mini amber"><Clock3 size={17}/></span><span>Outstanding</span><strong>{money(outstandingTotal)}</strong></div>
+      <div className="click-row" onClick={() => { setTab('Quotations'); setPageNumber(1) }} style={{ cursor: 'pointer' }}><span className="round-mini teal"><FileText size={17}/></span><span>Quotations</span><strong>{quoteCount}</strong></div>
+      <div className="click-row" onClick={() => { setTab('Invoices'); setPageNumber(1) }} style={{ cursor: 'pointer' }}><span className="round-mini blue"><WalletCards size={17}/></span><span>Invoices</span><strong>{invoiceCount}</strong></div>
+      <div className="click-row" onClick={() => { setTab('Receipts'); setPageNumber(1) }} style={{ cursor: 'pointer' }}><span className="round-mini amber"><ReceiptText size={17}/></span><span>Receipts</span><strong>{receiptCount}</strong></div>
     </div>
     <section className="panel content-panel">
       <div className="list-toolbar">
         <div className="tabs">
           {tabs.map(name => (
-            <button className={tab === name ? 'selected' : ''} key={name} onClick={() => { setTab(name); setPageNumber(1); }}>
+            <button className={tab === name ? 'selected' : ''} key={name} onClick={() => { setTab(name); setPageNumber(1) }}>
               {name}
-              <span>{name === 'Quotations' ? quoteCount : name === 'Invoices' ? invoiceCount : allDocuments.length}</span>
+              <span>{name === 'Quotations' ? quoteCount : name === 'Invoices' ? invoiceCount : receiptCount}</span>
             </button>
           ))}
         </div>
-        <SearchBox value={query} onChange={q => { setQuery(q); setPageNumber(1); }} placeholder="Search by number, name, or status"/>
-      </div>
-      {/* Desktop View */}
-      <div className="table-wrap full-table desktop-only-table">
-        <table>
-          <thead>
-            <tr>
-              <th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>DUE DATE</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(doc => {
-              const paid = paidFor(payments, doc.id)
-              const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
-              return <tr key={doc.id} className="click-row">
-                <td onClick={() => openDoc(doc)}><div className="doc-cell"><span className={`doc-type-icon ${doc.type}`}><FileText size={15}/></span><span><strong>{doc.number}</strong><small>{doc.type}</small></span></div></td>
-                <td onClick={() => openDoc(doc)}><span className="customer-name-cell">{doc.customer_name}</span></td>
-                <td onClick={() => openDoc(doc)}><span className="date-cell">{dateFmt(doc.issue_date)}</span></td>
-                <td onClick={() => openDoc(doc)}><span className="date-cell">{isInvoice(doc) ? dateFmt(doc.due_date) : '—'}</span></td>
-                <td onClick={() => openDoc(doc)}><strong className="amount-cell">{money(docTotal(doc))}</strong></td>
-                <td onClick={() => openDoc(doc)}><StatusPill status={status}/></td>
-                <td>
-                  <div className="row-actions">
-                    {isInvoice(doc) && paid < docTotal(doc) && <button title="Record payment" onClick={() => addPayment(doc)}><WalletCards size={16}/></button>}
-                    <button title="Download PDF" onClick={async () => downloadDocument(doc, payments, settings, 'pdf')}><Download size={16}/></button>
-                    <button title="Download PNG" onClick={async () => downloadDocument(doc, payments, settings, 'png')}><Printer size={16}/></button>
-                    <button title="Delete" onClick={() => onDelete(doc)}><Trash2 size={15}/></button>
-                  </div>
-                </td>
-              </tr>
-            })}
-          </tbody>
-        </table>
+        <SearchBox value={query} onChange={q => { setQuery(q); setPageNumber(1) }} placeholder={tab === 'Receipts' ? 'Search receipt #, invoice #, customer, or method' : 'Search by number, name, or status'}/>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="mobile-docs-list">
-        {rows.map(doc => {
-          const paid = paidFor(payments, doc.id)
-          const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
-          return (
-            <div key={doc.id} className="mobile-doc-card" onClick={() => openDoc(doc)}>
-              <div className="mobile-doc-top">
-                <div className="doc-cell">
-                  <span className={`doc-type-icon ${doc.type}`}><FileText size={16}/></span>
-                  <div><strong>{doc.number}</strong><small>{doc.type}</small></div>
+      {tab === 'Receipts' ? (
+        <>
+          <div className="table-wrap full-table desktop-only-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>RECEIPT</th><th>CUSTOMER</th><th>DATE PAID</th><th>METHOD</th><th>AMOUNT</th><th>PAYMENT STATUS</th><th>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receiptRows.map(({ payment, doc }) => {
+                  const total = doc ? docTotal(doc) : payment.amount
+                  const paid = doc ? paidFor(payments, doc.id) : payment.amount
+                  const paymentStatus = doc ? (paid >= total ? 'paid' : 'partial') : 'paid'
+                  return (
+                    <tr key={payment.id} className="click-row" onClick={() => doc && openDoc(doc)}>
+                      <td>
+                        <div className="doc-cell">
+                          <span className="doc-type-icon invoice"><ReceiptText size={15}/></span>
+                          <span><strong>{payment.number}</strong><small>{doc ? `Ref ${doc.number}` : 'Payment receipt'}</small></span>
+                        </div>
+                      </td>
+                      <td><span className="customer-name-cell">{doc?.customer_name || 'Customer'}</span></td>
+                      <td><span className="date-cell">{dateFmt(payment.paid_at)}</span></td>
+                      <td><span className="date-cell">{payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</span></td>
+                      <td><strong className="amount-cell">{money(payment.amount)}</strong></td>
+                      <td><StatusPill status={paymentStatus}/></td>
+                      <td onClick={e => e.stopPropagation()}>
+                        <div className="row-actions">
+                          {doc && <button title="Download receipt PDF" onClick={async () => downloadDocument(doc, payments, settings, 'pdf', payment)}><Download size={16}/></button>}
+                          {doc && <button title="Download receipt PNG" onClick={async () => downloadDocument(doc, payments, settings, 'png', payment)}><Printer size={16}/></button>}
+                          {doc && <button title="View details" onClick={() => openDoc(doc)}><ArrowUpRight size={16}/></button>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mobile-docs-list">
+            {receiptRows.map(({ payment, doc }) => {
+              const total = doc ? docTotal(doc) : payment.amount
+              const paid = doc ? paidFor(payments, doc.id) : payment.amount
+              const paymentStatus = doc ? (paid >= total ? 'paid' : 'partial') : 'paid'
+              return (
+                <div key={payment.id} className="mobile-doc-card" onClick={() => doc && openDoc(doc)}>
+                  <div className="mobile-doc-top">
+                    <div className="doc-cell">
+                      <span className="doc-type-icon invoice"><ReceiptText size={16}/></span>
+                      <div><strong>{payment.number}</strong><small>{doc ? `Ref ${doc.number}` : 'Receipt'}</small></div>
+                    </div>
+                    <StatusPill status={paymentStatus}/>
+                  </div>
+                  <div className="mobile-doc-body">
+                    <div className="mobile-doc-customer">{doc?.customer_name || 'Customer'}</div>
+                    <div className="mobile-doc-amount">{money(payment.amount)}</div>
+                  </div>
+                  <div className="mobile-doc-meta">
+                    <span>{dateFmt(payment.paid_at)}</span>
+                    <span>{payment.method}{payment.reference ? ` · ${payment.reference}` : ''}</span>
+                  </div>
+                  {doc && (
+                    <div className="mobile-doc-actions" onClick={e => e.stopPropagation()}>
+                      <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 10px' }} onClick={() => downloadDocument(doc, payments, settings, 'pdf', payment)}>
+                        <Download size={13}/> Receipt PDF
+                      </button>
+                      <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 10px' }} onClick={() => downloadDocument(doc, payments, settings, 'png', payment)}>
+                        <Printer size={13}/> Receipt PNG
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <StatusPill status={status}/>
-              </div>
-              <div className="mobile-doc-body">
-                <div className="mobile-doc-customer">{doc.customer_name}</div>
-                <div className="mobile-doc-amount">{money(docTotal(doc))}</div>
-              </div>
-              <div className="mobile-doc-meta">
-                <span>Issued: {dateFmt(doc.issue_date)}</span>
-                {isInvoice(doc) && <span>Due: {dateFmt(doc.due_date)}</span>}
-              </div>
-              <div className="mobile-doc-actions" onClick={e => e.stopPropagation()}>
-                {isInvoice(doc) && paid < docTotal(doc) && (
-                  <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} onClick={() => addPayment(doc)}>
-                    <WalletCards size={14}/> Pay
-                  </button>
-                )}
-                <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PDF" onClick={() => downloadDocument(doc, payments, settings, 'pdf')}>
-                  <Download size={13}/> PDF
-                </button>
-                <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PNG" onClick={() => downloadDocument(doc, payments, settings, 'png')}>
-                  <Printer size={13}/> PNG
-                </button>
-                <button className="icon-button" title="Delete" onClick={() => onDelete(doc)}>
-                  <Trash2 size={15}/>
-                </button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-      {filtered.length === 0 && <EmptyState icon={FileClock} title={query ? 'No matches found' : 'No documents yet'} detail={query ? 'Try a different search.' : 'Create your first quotation or invoice to see it here.'}/>}
+              )
+            })}
+          </div>
+          {receiptEntries.length === 0 && <EmptyState icon={ReceiptText} title={query ? 'No receipts match' : 'No receipts yet'} detail={query ? 'Try a different search.' : 'Record a partial or full payment on any invoice to generate a downloadable receipt.'}/>}
+        </>
+      ) : (
+        <>
+          <div className="table-wrap full-table desktop-only-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>DOCUMENT</th><th>CUSTOMER</th><th>DATE</th><th>{tab === 'Invoices' ? 'DUE DATE' : 'VALID UNTIL'}</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {docRows.map(doc => {
+                  const paid = paidFor(payments, doc.id)
+                  const docPayments = payments.filter(p => p.document_id === doc.id)
+                  const latestReceipt = docPayments[0]
+                  const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
+                  return <tr key={doc.id} className="click-row">
+                    <td onClick={() => openDoc(doc)}><div className="doc-cell"><span className={`doc-type-icon ${doc.type}`}><FileText size={15}/></span><span><strong>{doc.number}</strong><small>{doc.type}</small></span></div></td>
+                    <td onClick={() => openDoc(doc)}><span className="customer-name-cell">{doc.customer_name}</span></td>
+                    <td onClick={() => openDoc(doc)}><span className="date-cell">{dateFmt(doc.issue_date)}</span></td>
+                    <td onClick={() => openDoc(doc)}><span className="date-cell">{dateFmt(doc.due_date)}</span></td>
+                    <td onClick={() => openDoc(doc)}><strong className="amount-cell">{money(docTotal(doc))}</strong></td>
+                    <td onClick={() => openDoc(doc)}><StatusPill status={status}/></td>
+                    <td>
+                      <div className="row-actions">
+                        {isInvoice(doc) && paid < docTotal(doc) && <button title="Record payment" onClick={() => addPayment(doc)}><WalletCards size={16}/></button>}
+                        {isInvoice(doc) && latestReceipt && <button title={`Download receipt ${latestReceipt.number} PDF`} onClick={async () => downloadDocument(doc, payments, settings, 'pdf', latestReceipt)}><ReceiptText size={16}/></button>}
+                        <button title="Download PDF" onClick={async () => downloadDocument(doc, payments, settings, 'pdf')}><Download size={16}/></button>
+                        <button title="Download PNG" onClick={async () => downloadDocument(doc, payments, settings, 'png')}><Printer size={16}/></button>
+                        <button title="Delete" onClick={() => onDelete(doc)}><Trash2 size={15}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mobile-docs-list">
+            {docRows.map(doc => {
+              const paid = paidFor(payments, doc.id)
+              const docPayments = payments.filter(p => p.document_id === doc.id)
+              const latestReceipt = docPayments[0]
+              const status = isInvoice(doc) ? (paid >= docTotal(doc) ? 'paid' : paid ? 'partial' : doc.due_date < today() ? 'overdue' : doc.status) : doc.status
+              return (
+                <div key={doc.id} className="mobile-doc-card" onClick={() => openDoc(doc)}>
+                  <div className="mobile-doc-top">
+                    <div className="doc-cell">
+                      <span className={`doc-type-icon ${doc.type}`}><FileText size={16}/></span>
+                      <div><strong>{doc.number}</strong><small>{doc.type}</small></div>
+                    </div>
+                    <StatusPill status={status}/>
+                  </div>
+                  <div className="mobile-doc-body">
+                    <div className="mobile-doc-customer">{doc.customer_name}</div>
+                    <div className="mobile-doc-amount">{money(docTotal(doc))}</div>
+                  </div>
+                  <div className="mobile-doc-meta">
+                    <span>Issued: {dateFmt(doc.issue_date)}</span>
+                    {isInvoice(doc) && <span>Due: {dateFmt(doc.due_date)}</span>}
+                  </div>
+                  <div className="mobile-doc-actions" onClick={e => e.stopPropagation()}>
+                    {isInvoice(doc) && paid < docTotal(doc) && (
+                      <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} onClick={() => addPayment(doc)}>
+                        <WalletCards size={14}/> Pay
+                      </button>
+                    )}
+                    {isInvoice(doc) && latestReceipt && (
+                      <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title={`Download receipt ${latestReceipt.number}`} onClick={() => downloadDocument(doc, payments, settings, 'pdf', latestReceipt)}>
+                        <ReceiptText size={13}/> Receipt
+                      </button>
+                    )}
+                    <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PDF" onClick={() => downloadDocument(doc, payments, settings, 'pdf')}>
+                      <Download size={13}/> PDF
+                    </button>
+                    <button className="button secondary" style={{ height: '30px', fontSize: '11px', padding: '0 8px' }} title="Download PNG" onClick={() => downloadDocument(doc, payments, settings, 'png')}>
+                      <Printer size={13}/> PNG
+                    </button>
+                    <button className="icon-button" title="Delete" onClick={() => onDelete(doc)}>
+                      <Trash2 size={15}/>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {filteredDocs.length === 0 && <EmptyState icon={FileClock} title={query ? 'No matches found' : `No ${tab.toLowerCase()} yet`} detail={query ? 'Try a different search.' : `Create your first ${tab === 'Quotations' ? 'quotation' : 'invoice'} to see it here.`}/>}
+        </>
+      )}
+
       <div className="table-footer">
-        <span>Showing <strong>{rows.length}</strong> of <strong>{filtered.length}</strong> {filtered.length === 1 ? 'document' : 'documents'}</span>
+        <span>Showing <strong>{tab === 'Receipts' ? receiptRows.length : docRows.length}</strong> of <strong>{activeCount}</strong> {tab.toLowerCase()}</span>
         <span className="pagination">
           <button disabled={currentPage <= 1} onClick={() => setPageNumber(p => Math.max(1, p - 1))} aria-label="Previous page"><ArrowLeft size={14}/></button>
           <span className="page-number" style={{ padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 'var(--radius-sm)', background: 'var(--accent-teal-bg)', color: 'var(--accent-teal-text)', fontSize: '11px', fontWeight: 700 }}>{currentPage} / {totalPages}</span>
@@ -1212,6 +1332,64 @@ function PaymentEditor({ document, payments, acceptedMethods, close, save }: { d
   }))
   const submit = (event: React.FormEvent) => { event.preventDefault(); const numeric = Number(amount); if (numeric <= 0 || numeric > remaining) return; save({ document_id: document.id, paid_at: paidAt, amount: numeric, method, reference }) }
   return <Dialog title="Record a payment" subtitle="A receipt will be created for this payment." close={close}><form className="dialog-form" onSubmit={submit}><div className="payment-context"><span className="round-mini teal"><ReceiptText size={17}/></span><div><strong>{document.number} · {document.customer_name}</strong><small>{money(remaining)} remaining on this invoice</small></div></div><Field label="Amount received (UGX)" value={amount} onChange={setAmount} type="number" required/><div className="form-row"><Field label="Payment date" value={paidAt} onChange={setPaidAt} type="date" required/><div className="field"><span>Payment method</span><button type="button" className="select-trigger" onClick={() => setPickingMethod(true)}><span className="select-trigger-value"><strong>{method}</strong></span><ChevronDown size={15}/></button></div></div><Field label="Reference (optional)" value={reference} onChange={setReference} placeholder="Transaction ID or short note"/><div className="payment-remainder"><span>Balance after payment</span><strong>{money(Math.max(0, remaining - (Number(amount) || 0)))}</strong></div><div className="dialog-actions"><Button variant="secondary" type="button" onClick={close}>Cancel</Button><Button type="submit" disabled={!Number(amount) || Number(amount) > remaining}><ReceiptText size={16}/> Record payment</Button></div></form>{pickingMethod && <BottomSelectSheet title="Select payment method" subtitle="Choose how the customer settled this payment." options={methodOptions} value={method} onSelect={val => { setMethod(val as PaymentMethod); setPickingMethod(false) }} close={() => setPickingMethod(false)} />}</Dialog>
+}
+
+function ReceiptReadyModal({ doc, payment, remaining, payments, settings, close, viewReceipts }: { doc: SalesDocument; payment: Payment; remaining: number; payments: Payment[]; settings: Store['settings']; close: () => void; viewReceipts: () => void }) {
+  const [exporting, setExporting] = useState<'pdf' | 'png' | null>(null)
+  const full = remaining <= 0
+
+  const exportReceipt = async (format: 'pdf' | 'png') => {
+    setExporting(format)
+    try {
+      await downloadDocument(doc, payments, settings, format, payment)
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not download receipt.')
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  return (
+    <Dialog
+      title={full ? 'Payment settled in full' : 'Partial payment recorded'}
+      subtitle={`Receipt ${payment.number} is ready to download for ${doc.customer_name}.`}
+      close={close}
+    >
+      <div className="dialog-form">
+        <div className="receipt-ready-card">
+          <div className="receipt-ready-top">
+            <div>
+              <span style={{ fontSize: '11px', color: 'var(--ink-muted)', display: 'block', marginBottom: '2px' }}>AMOUNT RECEIVED</span>
+              <div className="receipt-ready-amount">{money(payment.amount)}</div>
+            </div>
+            <StatusPill status={full ? 'paid' : 'partial'} />
+          </div>
+          <div className="receipt-ready-grid">
+            <div><span>Receipt number</span><strong>{payment.number}</strong></div>
+            <div><span>Document ref</span><strong>{doc.number}</strong></div>
+            <div><span>Method</span><strong>{payment.method}</strong></div>
+            <div><span>Date paid</span><strong>{dateFmt(payment.paid_at)}</strong></div>
+            <div><span>Remaining balance</span><strong>{money(remaining)}</strong></div>
+            {payment.reference && <div><span>Transaction ref</span><strong>{payment.reference}</strong></div>}
+          </div>
+        </div>
+
+        <div className="receipt-ready-actions">
+          <Button type="button" onClick={() => void exportReceipt('pdf')} disabled={exporting !== null}>
+            <Download size={16}/> {exporting === 'pdf' ? 'Preparing PDF…' : 'Download Receipt PDF'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => void exportReceipt('png')} disabled={exporting !== null}>
+            <Printer size={16}/> {exporting === 'png' ? 'Preparing PNG…' : 'Download Receipt PNG'}
+          </Button>
+        </div>
+
+        <div className="dialog-actions">
+          <Button type="button" variant="ghost" onClick={viewReceipts}>View all receipts</Button>
+          <Button type="button" variant="secondary" onClick={close}>Done</Button>
+        </div>
+      </div>
+    </Dialog>
+  )
 }
 
 function DocumentDetail({ document, store, close, edit, duplicate, convert, addPayment, onDelete }: { document: SalesDocument; store: Store; close: () => void; edit: () => void; duplicate: () => void; convert: () => void; addPayment: () => void; onDelete: () => void }) {

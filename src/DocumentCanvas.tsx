@@ -381,13 +381,19 @@ export function DocumentCanvas({
       {/* Document Meta Row */}
       <div className="paper-meta-strip">
         <div>
-          <span>ISSUE DATE</span>
+          <span>{receipt ? 'RECEIPT DATE' : 'ISSUE DATE'}</span>
           <strong>{displayDate}</strong>
         </div>
-        {document.type === 'invoice' && (
+        {!receipt && document.type === 'invoice' && (
           <div>
             <span>DUE DATE</span>
             <strong>{date(document.due_date)}</strong>
+          </div>
+        )}
+        {receipt && (
+          <div>
+            <span>PAYMENT METHOD</span>
+            <strong>{payment!.method}</strong>
           </div>
         )}
         <div>
@@ -396,57 +402,123 @@ export function DocumentCanvas({
         </div>
         <div>
           <span>STATUS</span>
-          <strong className={balance <= 0 && document.type === 'invoice' ? 'settled' : 'due'}>
-            {receipt ? 'CONFIRMED' : document.type === 'quotation' ? 'ESTIMATE' : balance <= 0 ? 'PAID IN FULL' : 'PAYMENT DUE'}
+          <strong className={receipt ? (balance <= 0 ? 'settled' : 'due') : balance <= 0 && document.type === 'invoice' ? 'settled' : 'due'}>
+            {receipt
+              ? balance <= 0
+                ? 'PAID IN FULL'
+                : 'PARTIAL PAYMENT'
+              : document.type === 'quotation'
+                ? 'ESTIMATE'
+                : balance <= 0
+                  ? 'PAID IN FULL'
+                  : 'PAYMENT DUE'}
           </strong>
         </div>
       </div>
 
       {receipt ? (
         <>
-          <div className="paper-table-head">
-            <span>PAYMENT RECEIPT DETAILS</span>
-            <span>AMOUNT</span>
-          </div>
-          <div className="paper-receipt-card">
-            <div className="paper-receipt-paid">
-              <span>PAYMENT RECEIVED</span>
-              <strong>{cash(payment!.amount)}</strong>
+          <div className="paper-receipt-hero">
+            <div>
+              <span className="paper-receipt-hero-label">AMOUNT RECEIVED</span>
+              <strong className="paper-receipt-hero-amount">{cash(payment!.amount)}</strong>
+              <p className="paper-receipt-hero-sub">
+                {balance <= 0 ? 'Full settlement' : 'Partial payment'} via {payment!.method}
+                {payment!.reference ? ` · Ref ${payment!.reference}` : ''}
+              </p>
             </div>
+            <div className="paper-receipt-stamp">
+              <CheckCircle2 size={16} />
+              <span>{balance <= 0 ? 'PAID IN FULL' : 'OFFICIAL RECEIPT'}</span>
+            </div>
+          </div>
+
+          <div className="paper-receipt-card">
             <div className="paper-receipt-grid">
-              <div>
-                <span>INVOICE NUMBER</span>
-                <strong>#{document.number}</strong>
+              <div className="paper-receipt-cell">
+                <span>RECEIPT NUMBER</span>
+                <strong className="mono">#{payment!.number}</strong>
               </div>
-              <div>
+              <div className="paper-receipt-cell">
                 <span>DATE RECEIVED</span>
                 <strong>{date(payment!.paid_at)}</strong>
               </div>
-              <div>
+              <div className="paper-receipt-cell">
                 <span>PAYMENT METHOD</span>
                 <strong>{payment!.method}</strong>
               </div>
-              {payment!.reference && (
-                <div>
-                  <span>TRANSACTION REF</span>
-                  <strong>{payment!.reference}</strong>
-                </div>
-              )}
+              <div className="paper-receipt-cell">
+                <span>TRANSACTION REF</span>
+                <strong className="mono">{payment!.reference || 'Direct Settlement'}</strong>
+              </div>
+              <div className="paper-receipt-cell">
+                <span>ORDER REFERENCE</span>
+                <strong className="mono">#{document.number}</strong>
+              </div>
+              <div className="paper-receipt-cell">
+                <span>RECEIVED BY</span>
+                <strong>{settings.name || 'NexTone'}</strong>
+              </div>
             </div>
           </div>
+
+          {document.items.length > 0 && (
+            <>
+              <div className="paper-table-head">
+                <span>ITEMS &amp; SERVICES COVERED</span>
+                <span>AMOUNT</span>
+              </div>
+              <div className="paper-lines paper-receipt-items">
+                {document.items.slice(0, 3).map((item, index) => (
+                  <div className="paper-line" key={item.id || index}>
+                    <div className="paper-line-info">
+                      <strong className="paper-line-name">{item.description}</strong>
+                      <div className="paper-line-sub">
+                        <span>Qty:</span>
+                        <b>{item.quantity}</b>
+                        <span>({item.unit || 'piece'})</span>
+                        <span>×</span>
+                        <span>UGX {Math.round(item.unit_price).toLocaleString('en-UG')}</span>
+                      </div>
+                    </div>
+                    <strong className="paper-line-total">{cash(item.quantity * item.unit_price)}</strong>
+                  </div>
+                ))}
+                {document.items.length > 3 && (
+                  <div className="paper-receipt-more">
+                    +{document.items.length - 3} more item{document.items.length - 3 === 1 ? '' : 's'} included in order #{document.number}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           <div className="paper-bottom-section">
             <div className="paper-instructions-card">
               <div className="instructions-title">
                 <CheckCircle2 size={16} />
                 <strong>OFFICIAL RECEIPT ACKNOWLEDGMENT</strong>
               </div>
-              <p className="instructions-note">
-                Thank you for your business. This official receipt acknowledges payment in full or part toward invoice #{document.number}.
-              </p>
+              <div className="instructions-note">
+                <p>
+                  Thank you for your business. This official receipt confirms payment of{' '}
+                  <strong>{cash(payment!.amount)}</strong> received on {date(payment!.paid_at)} for order reference #
+                  {document.number}.
+                </p>
+              </div>
+              <div className="receipt-auth-meta">
+                <span>
+                  Authorized by: <strong>{settings.name || 'NexTone'}</strong>
+                </span>
+                <span>
+                  Account: <strong>{balance <= 0 ? 'Settled' : 'Balance open'}</strong>
+                </span>
+              </div>
             </div>
+
             <div className="paper-total-card">
               <div className="total-row">
-                <span>INVOICE TOTAL</span>
+                <span>TOTAL BILLED</span>
                 <strong>{cash(totalOf(document.items, document.discount_percent))}</strong>
               </div>
               <div className="total-row">
@@ -461,6 +533,17 @@ export function DocumentCanvas({
                 <span>REMAINING BALANCE</span>
                 <strong className={balance > 0 ? 'due' : 'settled'}>{cash(balance)}</strong>
               </div>
+              {balance <= 0 ? (
+                <div className="statement-payment-settled">
+                  <CheckCircle2 size={14} />
+                  <span>PAID IN FULL</span>
+                </div>
+              ) : (
+                <div className="statement-payment-due">
+                  <AlertCircle size={14} />
+                  <span>BALANCE REMAINING</span>
+                </div>
+              )}
             </div>
           </div>
         </>
